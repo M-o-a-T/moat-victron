@@ -11,6 +11,7 @@ trap 'echo ERROR' 0 1 2
 
 echo "Victron/MoaT setup"
 /opt/victronenergy/swupdate-scripts/resize2fs.sh
+cp vimrc $HOME/.vimrc
 
 # Packages
 
@@ -20,15 +21,21 @@ opkg install \
 	python3-venv \
 	python3-modules \
 	findutils \
-	python3-dataclasses \
 	psmisc \
 	git \
 	vim \
 	binutils \
+	git-perltools \
+	perl-module-lib \
+	perl-module-file-temp \
+	perl-module-ipc-open2 \
+	perl-module-time-local \
 
 # venv
-if test ! -d env; then
-	python3 -mvenv --without-pip --system-site-packages env
+if test -d env; then
+	python3 -mvenv --upgrade env
+else
+	python3 -mvenv env
 fi
 
 
@@ -39,9 +46,9 @@ set +x
 . $d/env/bin/activate
 set -x
 
-pip3 install asyncdbus trio pytest
+pip3 install -r requirements.txt
 
-cp -r dbus-modbus-local.serial/. /opt/victronenergy/service-templates/dbus-modbus-local.serial
+cp -r modbus/dbus-modbus-local.svc/. /opt/victronenergy/service-templates/dbus-modbus-local.serial
 sed -i -e "s!DIR!$d!" /opt/victronenergy/service-templates/dbus-modbus-local.serial/run
 
 mkdir -p /data/conf/serial-starter.d
@@ -50,3 +57,8 @@ service lmodbus         dbus-modbus-local.serial
 _
 
 cp modbus/udev.rules /etc/udev/rules.d/serial-starter-aux.rules
+
+set +x
+echo OK, all done.
+trap '' 0
+exit 0
