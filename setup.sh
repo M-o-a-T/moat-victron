@@ -48,7 +48,7 @@ set -x
 
 pip3 install -r requirements.txt
 
-cp -r modbus/dbus-modbus-local.svc/. /opt/victronenergy/service-templates/dbus-modbus-local.serial
+cp -r serial/dbus-modbus-local.svc/. /opt/victronenergy/service-templates/dbus-modbus-local.serial
 sed -i -e "s!DIR!$d!" /opt/victronenergy/service-templates/dbus-modbus-local.serial/run
 
 mkdir -p /data/conf/serial-starter.d
@@ -56,7 +56,7 @@ echo <<_ >>/data/conf/serial-starter.d/lmodbus.conf
 service lmodbus         dbus-modbus-local.serial
 _
 
-cp modbus/udev.rules /etc/udev/rules.d/serial-starter-aux.rules
+cp serial/udev.rules /etc/udev/rules.d/serial-starter-aux.rules
 
 set +x
 echo OK, all done.
