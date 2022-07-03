@@ -1,0 +1,4 @@
+asyncdbus
+trio
+pytest
+pyserial>=3.5

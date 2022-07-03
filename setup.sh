@@ -39,14 +39,12 @@ else
 fi
 
 
-ln -sf /usr/bin/pip3 /$d/env/bin/
-ln -sf /usr/bin/pip3 /$d/env/bin/pip
-
 set +x
 . $d/env/bin/activate
 set -x
 
-pip3 install -r requirements.txt
+$d/env/bin/pip3 install -r requirements.txt
+$d/env/bin/pip3 install --upgrade pip
 
 cp -r serial/dbus-modbus-local.svc/. /opt/victronenergy/service-templates/dbus-modbus-local.serial
 sed -i -e "s!DIR!$d!" /opt/victronenergy/service-templates/dbus-modbus-local.serial/run
