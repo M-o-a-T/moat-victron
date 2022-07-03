@@ -5,6 +5,6 @@
 d=$(cd $(dirname $0) ; /bin/pwd)
 app=$d/dbus-modbus-client.py
 
-export PYTHONPATH=$d/serial/twe_meter:/opt/victronenergy/dbus-modbus-client/
+export PYTHONPATH=$d/twe_meter:/opt/victronenergy/dbus-modbus-client/
 
 start -x -s $tty -r 9600
