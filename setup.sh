@@ -12,6 +12,7 @@ trap 'echo ERROR' 0 1 2
 echo "Victron/MoaT setup"
 /opt/victronenergy/swupdate-scripts/resize2fs.sh
 cp vimrc $HOME/.vimrc
+cp bashrc $HOME/.bashrc
 
 # Packages
 
