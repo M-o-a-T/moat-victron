@@ -1,4 +1,4 @@
-asyncdbus
+asyncdbus>=0.5.4
 trio
 pytest
 pyserial>=3.5
