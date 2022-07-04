@@ -6,8 +6,11 @@ from os import _exit as os_exit
 from os import statvfs
 from subprocess import check_output, CalledProcessError
 import logging
+import inspect
 import asyncdbus.signature as dbus
 logger = logging.getLogger(__name__)
+
+VEDBUS_INVALID = dbus.Variant('ai', [])
 
 class NoVrmPortalIdError(Exception):
 	pass
@@ -203,37 +206,49 @@ def get_product_id():
 #
 
 def wrap_dbus_value(value):
-	breakpoint()
 	if value is None:
 		return VEDBUS_INVALID
 	if isinstance(value, float):
-		return dbus.Double(value, variant_level=1)
+		return dbus.Variant('d', value)
 	if isinstance(value, bool):
-		return dbus.Boolean(value, variant_level=1)
+		return dbus.Variant('b', value)
 	if isinstance(value, int):
-		try:
-			return dbus.Int32(value, variant_level=1)
-		except OverflowError:
-			return dbus.Int64(value, variant_level=1)
+		if 0 <= value < 2**8:
+			return dbus.Variant('y', value)
+		if -2**15 <= value < 2**15:
+			return dbus.Variant('n', value)
+		if 0 <= value < 2**16:
+			return dbus.Variant('q', value)
+		if -2**31 <= value < 2**31:
+			return dbus.Variant('i', value)
+		if 0 <= value < 2**32:
+			return dbus.Variant('u', value)
+		if -2**63 <= value < 2**63:
+			return dbus.Variant('x', value)
+		if 0 <= value < 2**64:
+			return dbus.Variant('t', value)
+
+		raise OverflowError(value)
+
 	if isinstance(value, str):
-		return dbus.String(value, variant_level=1)
+		return dbus.Variant('s', value)
 	if isinstance(value, (bytes,bytearray)):
-		return dbus.ByteArray(value, variant_level=1)
+		return dbus.Variant('ay', value)
 	if isinstance(value, list):
 		if len(value) == 0:
 			# If the list is empty we cannot infer the type of the contents. So assume unsigned integer.
 			# A (signed) integer is dangerous, because an empty list of signed integers is used to encode
 			# an invalid value.
-			return dbus.Array([], signature=dbus.Signature('u'), variant_level=1)
-		return dbus.Array([wrap_dbus_value(x) for x in value], variant_level=1)
+			return dbus.Variant('au', [])
+		return dbus.Variant('av', [wrap_dbus_value(x) for x in value])
 	if isinstance(value, dict):
 		# Wrapping the keys of the dictionary causes D-Bus errors like:
 		# 'arguments to dbus_message_iter_open_container() were incorrect,
 		# assertion "(type == DBUS_TYPE_ARRAY && contained_signature &&
 		# *contained_signature == DBUS_DICT_ENTRY_BEGIN_CHAR) || (contained_signature == NULL ||
 		# _dbus_check_is_valid_signature (contained_signature))" failed in file ...'
-		return dbus.Dictionary({(k, wrap_dbus_value(v)) for k, v in value.items()}, variant_level=1)
-	return value
+		return dbus.Variant('a{sv}', {(k, wrap_dbus_value(v)) for k, v in value.items()})
+	raise ValueError("No idea how to encode %r" % (value,))
 
 
 dbus_int_types = (dbus.Int32, dbus.UInt32, dbus.Byte, dbus.Int16, dbus.UInt16, dbus.UInt32, dbus.Int64, dbus.UInt64)
@@ -288,3 +303,18 @@ class CtxObj:
 	def __aexit__(self, *tb):
 		return self.__ctx.__aexit__(*tb)
 
+
+async def call(p, *a, **k):
+	"""\
+		Call a possibly-null, possibly-async procedure with the given arguments.
+		
+		If the procedure is None, return None.
+		Otherwise if the result is a coroutine, resolve it.
+		Then return the result.
+		"""
+	if p is None:
+		return None
+	res = p(*a, **k)
+	if inspect.iscoroutine(res):
+		res = await res
+	return res

@@ -4,6 +4,7 @@
 import asyncdbus.service as dbus
 from asyncdbus.message_bus import MessageBus
 from asyncdbus.errors import DBusError
+from asyncdbus.constants import NameFlag
 import logging
 import traceback
 import os
@@ -11,7 +12,9 @@ import weakref
 import inspect
 from contextlib import asynccontextmanager
 from collections import defaultdict
-from .utils import wrap_dbus_value, unwrap_dbus_value, CtxObj
+from .utils import wrap_dbus_value, unwrap_dbus_value, CtxObj, call
+
+BUSITEM_INTF = "com.victronenergy.BusItem"
 
 # victron.dbus exports these classes:
 # Dbus -> an async context manager that returns a bus instance
@@ -19,13 +22,16 @@ from .utils import wrap_dbus_value, unwrap_dbus_value, CtxObj
 # DbusItemExport -> use to export one value to the dbus
 # DbusService -> use to create a service and export several values to the dbus
 
-# A context 
-
 class Dbus(CtxObj):
 	"""\
-		This is a context manager for connecting to the system DBus.
+		This is a context manager for connecting to the system/session DBus.
 
-		It supplies generators for 
+		It supplies generators for exporting and importing values, and a
+		context manager for creating a service.
+
+		Importers and exporters are not context managers. You need to
+		control their lifetimes explicitly by calling their `close`
+		method if they need to be destroyed before the bus context ends.
 		"""
 	def __init__(self, bus=None):
 		self._bus = bus
@@ -41,6 +47,9 @@ class Dbus(CtxObj):
 					self._bus = None
 		else:
 			yield self
+
+	async def request_name(self, name):
+		await self._bus.request_name(name, NameFlag.DO_NOT_QUEUE)
 
 	async def exporter(self, *a, **k):
 		res = DbusItemExport(self._bus, *a,**k)
@@ -116,17 +125,18 @@ class DbusService(object):
 		# make the dbus connection available to outside, could make this a true property instead, but ach..
 		self._servicename = servicename
 
-		# Register ourselves on the dbus, trigger an error if already in use (do_not_queue)
-		self._dbusname = dbus.BusName(servicename, self._dbusconn, do_not_queue=True)
-
-		# Add the root item that will return all items as a tree
-
-	
 	async def _start(self):
+		bus = self._dbusconn
 		self._dbusname = await bus.request_name(self._servicename, NameFlag.DO_NOT_QUEUE)
 		logging.info("registered ourselves on D-Bus as %s" % self._servicename)
-		self._dbusnodes['/'] = r = DbusRootExport(bus, '/', self)
+		self._dbusnodes['/'] = r = DbusRootExport(self, '/')
 		await bus.export('/', r)
+
+	async def close(self):
+		bus = self._dbusconn
+		await bus.unexport('/', self._dbusnodes['/'])
+		await bus.release_name(self._servicename)
+		del self._dbusnodes['/']
 
 	# @param callbackonchange	function that will be called when this value is changed. First parameter will
 	#							is the path of the object, second the new value. This callback should return
@@ -137,9 +147,10 @@ class DbusService(object):
 		if onchangecallback is not None:
 			self._onchangecallbacks[path] = onchangecallback
 
-		item = await DbusItemExport(
+		item = DbusItemExport(
 				self._dbusconn, path, value, description, writeable,
 				self._value_changed, gettextcallback, deletecallback=self._item_deleted)
+		await item._start()
 
 		spl = path.split('/')
 		for i in range(2, len(spl)):
@@ -149,6 +160,7 @@ class DbusService(object):
 				await self._dbusconn.export(subPath, r)
 		self._dbusobjects[path] = item
 		logging.debug('added %s with start value %s. Writeable is %s' % (path, value, writeable))
+		return item
 
 	# Add the mandatory paths, as per victron dbus api doc
 	async def add_mandatory_paths(self, processname, processversion, connection,
@@ -243,7 +255,7 @@ class DbusRootTracker(object):
 
 	async def _start(self):
 		obj = await self._bus.get_proxy_object(self.serviceName, '/')
-		self._intf = await obj.get_interface("com.victronenergy.BusItem")
+		self._intf = await obj.get_interface(BUSITEM_INTF)
 		await self._intf.on_items_changed(self._items_changed_handler)
 
 	async def close(self):
@@ -252,6 +264,11 @@ class DbusRootTracker(object):
 
 	def add(self, i):
 		self.importers[i.path].add(i)
+
+	def remove(self, i):
+		self.importers[i.path].remove(i)
+		# TODO we might want to close up the tracker
+		# if the list of importers becomes empty
 
 	async def _items_changed_handler(self, items):
 		if not isinstance(items, dict):
@@ -269,9 +286,7 @@ class DbusRootTracker(object):
 				t = str(unwrap_dbus_value(v))
 
 			for i in self.importers.get(path, ()):
-				res = i._properties_changed_handler({'Value': v, 'Text': t})
-				if inspect.iscoroutine(res):
-					await res
+				await call(i._properties_changed_handler, {'Value': v, 'Text': t})
 
 """
 Importing basics:
@@ -327,16 +342,17 @@ class DbusItemImport(object):
 		self._eventCallback = eventCallback
 		self._createsignal = createsignal
 
-		self._match = None
+		self._match = False
 
 	async def _start(self):
 		# TODO: _proxy is being used in settingsdevice.py, make a getter for that
 		self._proxy = await self._bus.get_proxy_object(self._serviceName, self._path)
 
 		if self._createsignal:
-			self._interface = await self._proxy.get_interface("com.victronenergy.BusItem")
+			self._interface = await self._proxy.get_interface(BUSITEM_INTF)
 
-			self._match = await self._interface.on_properties_changed(self._properties_changed_handler)
+			await self._interface.on_properties_changed(self._properties_changed_handler)
+			self._match = True
 			try:
 				r = self._roots[self._serviceName]
 			except KeyError:
@@ -350,9 +366,16 @@ class DbusItemImport(object):
 		await self._refreshcachedvalue()
 
 	async def close(self):
-		if self._match is not None:
-			await self._match.remove()
-			self._match = None
+		try:
+			r = self._roots[self._serviceName]
+		except KeyError:
+			pass
+		else:
+			r.remove(self)
+
+		if self._match:
+			await self._interface.off_properties_changed(self._properties_changed_handler)
+			self._match = False
 		self._proxy = None
 		self._interface = None
 
@@ -434,17 +457,14 @@ class DbusItemImport(object):
 		if "Value" in changes:
 			changes['Value'] = changes['Value'].value
 			self._cachedvalue = changes['Value']
-			if self._eventCallback:
-				res = self._eventCallback(self._serviceName, self._path, changes)
-				if inspect.iscoroutine(res):
-					await res
+			await call(self._eventCallback, self._serviceName, self._path, changes)
 
 
 class DbusTreeExport(dbus.ServiceInterface):
-	def __init__(self, service):
-		super().__init__('com.victronenergy.BusItem')
+	def __init__(self, service, path):
+		super().__init__(BUSITEM_INTF)
 		self._service = service
-		logging.debug("DbusTreeExport %s has been created" % objectPath)
+		logging.debug("DbusTreeExport %r has been created", path)
 
 	def close(self):
 		# self._get_path() will raise an exception when retrieved after the call to .remove_from_connection,
@@ -469,19 +489,20 @@ class DbusTreeExport(dbus.ServiceInterface):
 			px += '/'
 		for p, item in self._service._dbusobjects.items():
 			if p.startswith(px):
-				v = item.GetText() if get_text else wrap_dbus_value(item.local_get_value())
+				v = await item.get_text() if get_text else wrap_dbus_value(item.local_get_value())
 				r[p[len(px):]] = v
 		logging.debug(r)
 		return r
 
 	@dbus.method()
-	def GetValue(self) -> 'v':
-		value = self._get_value_handler(self._get_path())
-		return dbus.Dictionary(value, signature=dbus.Signature('sv'), variant_level=1)
+	async def GetValue(self) -> 'v':
+		breakpoint()
+		value = await self._get_value_handler(self._get_path())
+		return dbus.Variant(dbus.Dictionary(value, signature=dbus.Signature('sv'), variant_level=1))
 
 	@dbus.method()
-	def GetText(self) -> 'v':
-		return self._get_value_handler(self._get_path(), True)
+	async def GetText(self) -> 'v':
+		return await self._get_value_handler(self._get_path(), True)
 
 	def local_get_value(self):
 		return self._get_value_handler(self.path)
@@ -496,7 +517,7 @@ class DbusRootExport(DbusTreeExport):
 		return {
 			path: {
 				'Value': wrap_dbus_value(item.local_get_value()),
-				'Text': item.GetText() }
+				'Text': item.get_text() }
 			for path, item in self._service._dbusobjects.items()
 		}
 
@@ -517,8 +538,10 @@ class DbusItemExport(dbus.ServiceInterface):
 	#					  value. This callback should return True to accept the change, False to reject it.
 	def __init__(self, bus, objectPath, value=None, description=None, writeable=False,
 					onchangecallback=None, gettextcallback=None, deletecallback=None):
-		super().__init__(objectPath)
+		super().__init__(BUSITEM_INTF)
+
 		self._bus = bus
+		self._path = objectPath
 		self._onchangecallback = onchangecallback
 		self._gettextcallback = gettextcallback
 		self._value = value
@@ -527,17 +550,14 @@ class DbusItemExport(dbus.ServiceInterface):
 		self._deletecallback = deletecallback
 
 	async def _start(self):
-		pass
+		await self._bus.export(self._path, self)
 
 	# To force immediate deregistering of this dbus object, explicitly call close().
-	def close(self):
+	async def close(self):
 		# self._get_path() will raise an exception when retrieved after the
 		# call to .remove_from_connection, so we need a copy.
-		path = self._get_path()
-		if path == None:
-			return
-		if self._deletecallback is not None:
-			self._deletecallback(path)
+		await self._bus.unexport(self._path, self)
+		await call(self._deletecallback, path)
 		self.local_set_value(None)
 		self.remove_from_connection()
 		logging.debug("DbusItemExport %s has been removed" % path)
@@ -551,19 +571,19 @@ class DbusItemExport(dbus.ServiceInterface):
 	# will be emitted to the dbus. This function is to be used in the python code that
 	# is using this class to export values to the dbus.
 	# set value to None to indicate that it is Invalid
-	def local_set_value(self, newvalue):
-		changes = self._local_set_value(newvalue)
+	async def local_set_value(self, newvalue):
+		changes = await self._local_set_value(newvalue)
 		if changes is not None:
-			self.PropertiesChanged(changes)
+			res = await self.PropertiesChanged(changes)
 
-	def _local_set_value(self, newvalue):
+	async def _local_set_value(self, newvalue):
 		if self._value == newvalue:
 			return None
 
 		self._value = newvalue
 		return {
 			'Value': wrap_dbus_value(newvalue),
-			'Text': self.GetText()
+			'Text': wrap_dbus_value(await self.get_text()),
 		}
 
 	def local_get_value(self):
@@ -617,28 +637,27 @@ class DbusItemExport(dbus.ServiceInterface):
 	# @return text A text-value. '---' when local value is invalid
 	@dbus.method()
 	def GetText(self) -> 's':
+		return self.get_text()
+
+	async def get_text(self):
 		if self._value is None:
 			return '---'
 
-		# Default conversion from dbus.Byte will get you a character (so 'T' instead of '84'), so we
-		# have to convert to int first. Note that if a dbus.Byte turns up here, it must have come from
-		# the application itself, as all data from the D-Bus should have been unwrapped by now.
-		if self._gettextcallback is None and type(self._value) == dbus.Byte:
-			return str(int(self._value))
+		if self._gettextcallback is not None:
+			return await call(self._gettextcallback, self.__dbus_object_path__, self._value)
 
-		if self._gettextcallback is None and self.__dbus_object_path__ == '/ProductId':
+		if self._path == '/ProductId':
 			return "0x%X" % self._value
 
-		if self._gettextcallback is None:
-			return str(self._value)
+		return str(self._value)
 
-		return self._gettextcallback(self.__dbus_object_path__, self._value)
+
 
 	## The signal that indicates that the value has changed.
 	# Other processes connected to this BusItem object will have subscribed to the
 	# event when they want to track our state.
 	@dbus.signal()
 	def PropertiesChanged(self, changes) -> 'a{sv}':
-		pass
+		return changes
 
 # end of file
