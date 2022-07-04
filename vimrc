@@ -2,6 +2,7 @@ set autowrite
 set noexpandtab
 set tabstop=4
 set shiftwidth=4
+set ignorecase
 set mouse-=a
 
 let &directory = expand('~/.vimdata/swap//')
