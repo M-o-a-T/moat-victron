@@ -11,8 +11,6 @@ trap 'echo ERROR' 0 1 2
 
 echo "Victron/MoaT setup"
 /opt/victronenergy/swupdate-scripts/resize2fs.sh
-cp vimrc $HOME/.vimrc
-cp bashrc $HOME/.bashrc
 
 # Packages
 
@@ -31,6 +29,21 @@ opkg install \
 	perl-module-file-temp \
 	perl-module-ipc-open2 \
 	perl-module-time-local \
+
+
+if test ! -e .git ; then
+	d=/data/moat
+	if test -d $d ; then
+		cd $d
+		git pull
+	else
+		git clone --recurse-submodules https://github.com/M-o-a-T/moat-victron.git $d
+		cd $d
+	fi
+fi
+
+cp vimrc $HOME/.vimrc
+cp bashrc $HOME/.bashrc
 
 # venv
 if test -d env; then
@@ -56,6 +69,13 @@ service lmodbus         dbus-modbus-local.serial
 _
 
 cp serial/udev.rules /etc/udev/rules.d/serial-starter-aux.rules
+
+ln -sf $(pwd)/victron $d/env/lib/python*/site-packages/
+cd bus/python
+ln -sf $(pwd)/msgpack.py $d/env/lib/python*/site-packages/
+ln -sf $(pwd)/serialpacker.py $d/env/lib/python*/site-packages/
+ln -sf $(pwd)/moat $d/env/lib/python*/site-packages/
+cd ../..
 
 set +x
 echo OK, all done.

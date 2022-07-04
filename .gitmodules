@@ -1,3 +1,6 @@
 [submodule "modbus/twe_meter"]
 	path = serial/twe_meter
 	url = https://github.com/M-o-a-T/victron-twe-meter-library.git
+[submodule "bus"]
+	path = bus
+	url = https://github.com/M-o-a-T/moat-bus.git
