@@ -15,26 +15,6 @@ VEDBUS_INVALID = dbus.Variant('ai', [])
 class NoVrmPortalIdError(Exception):
 	pass
 
-# Use this function to make sure the code quits on an unexpected exception. Make sure to use it
-# when using GLib.idle_add and also GLib.timeout_add.
-# Without this, the code will just keep running, since GLib does not stop the mainloop on an
-# exception.
-# Example: GLib.idle_add(exit_on_error, myfunc, arg1, arg2)
-def exit_on_error(func, *args, **kwargs):
-	try:
-		return func(*args, **kwargs)
-	except:
-		try:
-			print ('exit_on_error: there was an exception. Printing stacktrace will be tried and then exit')
-			print_exc()
-		except:
-			pass
-
-		# sys.exit() is not used, since that throws an exception, which does not lead to a program
-		# halt when used in a dbus callback, see connection.py in the Python/Dbus libraries, line 230.
-		os_exit(1)
-
-
 __vrm_portal_id = None
 def get_vrm_portal_id():
 	# The original definition of the VRM Portal ID is that it is the mac
@@ -208,6 +188,9 @@ def get_product_id():
 def wrap_dbus_value(value):
 	if value is None:
 		return VEDBUS_INVALID
+	if isinstance(value, dbus.Variant):
+            # already wrapped. No, we won't dual-wrap it.
+            return value
 	if isinstance(value, float):
 		return dbus.Variant('d', value)
 	if isinstance(value, bool):
@@ -247,8 +230,8 @@ def wrap_dbus_value(value):
 		# assertion "(type == DBUS_TYPE_ARRAY && contained_signature &&
 		# *contained_signature == DBUS_DICT_ENTRY_BEGIN_CHAR) || (contained_signature == NULL ||
 		# _dbus_check_is_valid_signature (contained_signature))" failed in file ...'
-		return dbus.Variant('a{sv}', {(k, wrap_dbus_value(v)) for k, v in value.items()})
-	raise ValueError("No idea how to encode %r" % (value,))
+		return dbus.Variant('a{sv}', {k: wrap_dbus_value(v) for k, v in value.items()})
+	raise ValueError("No idea how to encode %r (%s)" % (value,type(value).__name__))
 
 
 dbus_int_types = (dbus.Int32, dbus.UInt32, dbus.Byte, dbus.Int16, dbus.UInt16, dbus.UInt32, dbus.Int64, dbus.UInt64)

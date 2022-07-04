@@ -48,6 +48,10 @@ class Dbus(CtxObj):
 		else:
 			yield self
 
+	@property
+	def bus(self):
+		return self._bus
+
 	async def request_name(self, name):
 		await self._bus.request_name(name, NameFlag.DO_NOT_QUEUE)
 
@@ -127,10 +131,13 @@ class DbusService(object):
 
 	async def _start(self):
 		bus = self._dbusconn
-		self._dbusname = await bus.request_name(self._servicename, NameFlag.DO_NOT_QUEUE)
-		logging.info("registered ourselves on D-Bus as %s" % self._servicename)
 		self._dbusnodes['/'] = r = DbusRootExport(self, '/')
 		await bus.export('/', r)
+	
+	async def setup_done(self):
+		bus = self._dbusconn
+		self._dbusname = await bus.request_name(self._servicename, NameFlag.DO_NOT_QUEUE)
+		logging.info("registered ourselves on D-Bus as %s" % self._servicename)
 
 	async def close(self):
 		bus = self._dbusconn
@@ -199,26 +206,26 @@ class DbusService(object):
 	def __getitem__(self, path):
 		return self._dbusobjects[path].local_get_value()
 
-	def __setitem__(self, path, newvalue):
-		self._dbusobjects[path].local_set_value(newvalue)
+	async def setitem(self, path, newvalue):
+		await self._dbusobjects[path].local_set_value(newvalue)
 
-	def __delitem__(self, path):
-		self._dbusobjects[path].close()  # Invalidates and then removes the object path
+	async def delitem(self, path):
+		await self._dbusobjects[path].close()  # Invalidates and then removes the object path
 		assert path not in self._dbusobjects
 
 	def __contains__(self, path):
 		return path in self._dbusobjects
 
-	def __enter__(self):
+	async def __aenter__(self):
 		l = ServiceContext(self)
 		self._ratelimiters.append(l)
 		return l
 
-	def __exit__(self, *exc):
+	async def __aexit__(self, *exc):
 		# pop off the top one and flush it. If with statements are nested
 		# then each exit flushes its own part.
 		if self._ratelimiters:
-			self._ratelimiters.pop().flush()
+			await self._ratelimiters.pop().flush()
 
 class ServiceContext(object):
 	def __init__(self, parent):
@@ -228,14 +235,14 @@ class ServiceContext(object):
 	def __getitem__(self, path):
 		return self.parent[path]
 
-	def __setitem__(self, path, newvalue):
-		c = self.parent._dbusobjects[path]._local_set_value(newvalue)
+	async def setitem(self, path, newvalue):
+		c = await self.parent._dbusobjects[path]._local_set_value(newvalue)
 		if c is not None:
 			self.changes[path] = c
 
-	def flush(self):
+	async def flush(self):
 		if self.changes:
-			self.parent._dbusnodes['/'].ItemsChanged(self.changes)
+			await self.parent._dbusnodes['/'].ItemsChanged(self.changes)
 
 class TrackerDict(defaultdict):
 	""" Same as defaultdict, but passes the key to default_factory. """
@@ -464,22 +471,8 @@ class DbusTreeExport(dbus.ServiceInterface):
 	def __init__(self, service, path):
 		super().__init__(BUSITEM_INTF)
 		self._service = service
+		self._path = path
 		logging.debug("DbusTreeExport %r has been created", path)
-
-	def close(self):
-		# self._get_path() will raise an exception when retrieved after the call to .remove_from_connection,
-		# so we need a copy.
-		breakpoint()
-		path = self._get_path()
-		if path is None:
-			return
-		self.remove_from_connection()
-		logging.debug("DbusTreeExport %s has been removed" % path)
-
-	def _get_path(self):
-		if len(self._locations) == 0:
-			return None
-		return self._locations[0][1]
 
 	async def _get_value_handler(self, path, get_text=False):
 		logging.debug("_get_value_handler called for %s" % path)
@@ -496,13 +489,13 @@ class DbusTreeExport(dbus.ServiceInterface):
 
 	@dbus.method()
 	async def GetValue(self) -> 'v':
-		breakpoint()
-		value = await self._get_value_handler(self._get_path())
-		return dbus.Variant(dbus.Dictionary(value, signature=dbus.Signature('sv'), variant_level=1))
+		value = await self._get_value_handler(self._path)
+		return wrap_dbus_value(value)
 
 	@dbus.method()
 	async def GetText(self) -> 'v':
-		return await self._get_value_handler(self._get_path(), True)
+		value = await self._get_value_handler(self._path, True)
+		return wrap_dbus_value(value)
 
 	def local_get_value(self):
 		return self._get_value_handler(self.path)
@@ -520,7 +513,6 @@ class DbusRootExport(DbusTreeExport):
 				'Text': item.get_text() }
 			for path, item in self._service._dbusobjects.items()
 		}
-
 
 
 class DbusItemExport(dbus.ServiceInterface):
@@ -554,18 +546,11 @@ class DbusItemExport(dbus.ServiceInterface):
 
 	# To force immediate deregistering of this dbus object, explicitly call close().
 	async def close(self):
-		# self._get_path() will raise an exception when retrieved after the
-		# call to .remove_from_connection, so we need a copy.
 		await self._bus.unexport(self._path, self)
 		await call(self._deletecallback, path)
-		self.local_set_value(None)
+		await self.local_set_value(None)
 		self.remove_from_connection()
 		logging.debug("DbusItemExport %s has been removed" % path)
-
-	def _get_path(self):
-		if len(self._locations) == 0:
-			return None
-		return self._locations[0][1]
 
 	## Sets the value. And in case the value is different from what it was, a signal
 	# will be emitted to the dbus. This function is to be used in the python code that
@@ -589,6 +574,10 @@ class DbusItemExport(dbus.ServiceInterface):
 	def local_get_value(self):
 		return self._value
 
+	@property
+	def value(self):
+		return self._value
+
 	# ==== ALL FUNCTIONS BELOW THIS LINE WILL BE CALLED BY OTHER PROCESSES OVER THE DBUS ====
 
 	## Dbus exported method SetValue
@@ -597,7 +586,7 @@ class DbusItemExport(dbus.ServiceInterface):
 	# @param value The new value.
 	# @return completion-code When successful a 0 is return, and when not a -1 is returned.
 	@dbus.method()
-	def SetValue(self, newvalue: 'v') -> 'i':
+	async def SetValue(self, newvalue: 'v') -> 'i':
 		if not self._writeable:
 			return 1  # NOT OK
 
@@ -610,7 +599,7 @@ class DbusItemExport(dbus.ServiceInterface):
 		if (self._onchangecallback is None or
 				(self._onchangecallback is not None and self._onchangecallback(self.__dbus_object_path__, newvalue))):
 
-			self.local_set_value(newvalue)
+			await self.local_set_value(newvalue)
 			return 0  # OK
 
 		return 2  # NOT OK
@@ -644,7 +633,7 @@ class DbusItemExport(dbus.ServiceInterface):
 			return '---'
 
 		if self._gettextcallback is not None:
-			return await call(self._gettextcallback, self.__dbus_object_path__, self._value)
+			return await call(self._gettextcallback, self._path, self._value)
 
 		if self._path == '/ProductId':
 			return "0x%X" % self._value
