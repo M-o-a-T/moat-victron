@@ -224,21 +224,17 @@ class DbusService(object):
 	async def __aexit__(self, *exc):
 		# pop off the top one and flush it. If with statements are nested
 		# then each exit flushes its own part.
-		if self._ratelimiters:
-			await self._ratelimiters.pop().flush()
+		await self._ratelimiters.pop().flush()
 
 class ServiceContext(object):
 	def __init__(self, parent):
 		self.parent = parent
 		self.changes = {}
 
-	def __getitem__(self, path):
-		return self.parent[path]
-
-	async def setitem(self, path, newvalue):
-		c = await self.parent._dbusobjects[path]._local_set_value(newvalue)
+	async def set(self, var, newvalue):
+		c = await var._local_set_value(newvalue)
 		if c is not None:
-			self.changes[path] = c
+			self.changes[var._path] = c
 
 	async def flush(self):
 		if self.changes:
@@ -503,7 +499,7 @@ class DbusTreeExport(dbus.ServiceInterface):
 class DbusRootExport(DbusTreeExport):
 	@dbus.signal()
 	def ItemsChanged(self, changes) -> 'a{sa{sv}}':
-		pass
+		return changes
 
 	@dbus.method()
 	def GetItems(self) -> 'a{sa{sv}}':

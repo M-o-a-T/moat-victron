@@ -2,3 +2,7 @@ asyncdbus>=0.5.4
 trio
 pytest
 pyserial>=3.5
+asyncclick
+anyio_serial
+simpleeval
+ruyaml

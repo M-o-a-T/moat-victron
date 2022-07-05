@@ -1,3 +1,5 @@
-# The VE USB RS485 has a FT232R, but that chip can also rs232 etc, so also check default
-ACTION=="add", ENV{ID_BUS}=="usb", ENV{ID_VENDOR}=="MicroPython", ENV{VE_SERVICE}="ignore"
+# a MicroPython device is expected to run the MoaT backend
+ACTION=="add", ENV{ID_BUS}=="usb", ENV{ID_VENDOR}=="MicroPython", ENV{VE_SERVICE}="moat"
+
+# this bridge is limited to 9600 baud because the 1-phase meter can't talk faster
 ACTION=="add", ENV{ID_BUS}=="usb", ENV{ID_MODEL}=="CP2104_USB_to_UART_Bridge_Controller",  ENV{VE_SERVICE}="lmodbus"
