@@ -8,7 +8,7 @@ fi
 cd $d
 
 cp vimrc $HOME/.vimrc
-sed -e "s#:DIR:#$d#" < bashrc > $HOME/.bashrc
+sed -e "s#:DIR:#$d#" < profile.sh > $HOME/.profile
 
 . env/bin/activate
 
