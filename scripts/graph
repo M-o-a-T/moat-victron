@@ -1,0 +1,282 @@
+#!/usr/bin/python3
+
+import trio
+from deframed import App,Worker
+from deframed.default import CFG
+from wtforms import Form, BooleanField, StringField, validators
+from wtforms.widgets import TableWidget
+from pathlib import Path
+from victron.dbus import Dbus
+from functools import partial
+from moat.util import attrdict
+from pprint import pprint
+
+import logging
+from logging.config import dictConfig as logging_config
+logger = logging.getLogger("hello")
+
+NDATA = 1000
+
+class DataSet:
+	def __init__(self, name):
+		self.name = name
+		self.x = []
+		self.y = []
+		self.off = 0
+	
+	def add(self, x, y):
+		self.x.append(x)
+		self.y.append(y)
+
+	@property
+	def xo(self):
+		return self.x[self.off:]
+
+	@property
+	def yo(self):
+		return self.y[self.off:]
+
+	def min_x(self, x):
+		while len(self.x) > self.off and self.x[self.off] < x:
+			self.off += 1
+		if self.off > NDATA//2:
+			self.x = self.x[self.off-NDATA//4:]
+			self.y = self.y[self.off-NDATA//4:]
+			self.off = NDATA//4
+
+class DataSetProxy:
+	def __init__(self, worker, dataset):
+		self.worker = worker
+		self.data = dataset
+		self.min_x = -1
+		self.max_x = -1
+	
+	@property
+	def name(self):
+		return self.data.name
+
+	async def send_data(self, n):
+		async def send_all():
+			sx = self.data.x[self.data.off:]
+			sy = self.data.y[self.data.off:]
+			async def f1():
+				self.px = await self.worker.assign(f"p_x_{self.data.name}", (), sx)
+			async def f2():
+				self.py = await self.worker.assign(f"p_y_{self.data.name}", (), sy)
+			n.start_soon(f1)
+			n.start_soon(f2)
+
+			if sx:
+				self.min_x = sx[0]
+				self.max_x = sx[-1]
+			else:
+				self.max_x = -2
+
+		if self.min_x == -1:
+			if self.max_x == -1:
+				await send_all()
+			return True
+
+		else:  # update
+			if not self.data.x:
+				return False
+
+			work = False
+			off = self.data.off
+			while self.data.x[off] > self.min_x:
+				# we could use a binary search here
+				# but this should get called often enough to not bother
+				off -= 1
+				if off < 0: # we lost. re-send
+					await send_all()
+					return True
+			if off != self.data.off:
+				self.min_x = self.data.x[self.data.off]
+				async def f3():
+					await self.worker.eval(var="", obj=self.px, attr=("splice",), args=(0,self.data.off-off))
+				async def f4():
+					await self.worker.eval(var="", obj=self.py, attr=("splice",), args=(0,self.data.off-off))
+				n.start_soon(f3)
+				n.start_soon(f4)
+				work = True
+			off = len(self.data.x)-1
+			while off > 0 and self.data.x[off] > self.max_x:
+				off -= 1
+			if off < len(self.data.x)-1:
+				self.max_x = self.data.x[-1]
+				async def f5():
+					await self.worker.eval(var="", obj=self.px, attr=("splice",), args=(NDATA,0,*self.data.x[off+1:]))
+				async def f6():
+					await self.worker.eval(var="", obj=self.py, attr=("splice",), args=(NDATA,0,*self.data.y[off+1:]))
+				n.start_soon(f5)
+				n.start_soon(f6)
+				work = True
+			return work
+
+
+class Work(Worker):
+	title="Hello!"
+	# version="1.2.3" -- uses DeFramed's version if not set
+
+	async def show_main(self, token):
+		await self.debug(True)
+		await self.set_content("df_main", """
+<div>Here's a nice graph.</div>
+<div id="plot" style="width:1200px;height:500px;"></div>
+		""")
+		await self.alert("info", None)
+		await self.busy(False)
+		await super().show_main()
+		#await self.spawn(self._main2)
+
+	async def talk(self):
+		v = self.app.victron
+		proxies = [ DataSetProxy(self,ds) for ds in v.data.values() ]
+		async with trio.open_nursery() as n:
+			for p in proxies:
+				await p.send_data(n)
+
+		await self.eval(
+			var="plot",
+			obj=("Plotly","newPlot"),
+			args=[
+				"plot",
+				[
+					dict(
+						x = p.px,
+						y = p.py,
+						ids = p.px,
+						line = {"simplify":False},
+						type = "scatter",
+						name = p.name,
+					)
+					for p in proxies
+				],
+				dict(
+					margin= { "t": 0 },
+				)
+			])
+
+		while True:
+			await v.updated.wait()
+			work = False
+			async with trio.open_nursery() as n:
+				for p in proxies:
+					work = (await p.send_data(n)) or work
+			if not work:
+				continue
+
+			await self.eval(
+				var="",
+				obj=("Plotly","animate"),
+				args=[
+					"plot",
+					{
+						"data": [
+							{
+								"x": p.px,
+								"y": p.py,
+								"ids": p.px,
+							}
+							for p in proxies
+						],
+						#"traces": [0],
+						"layout": {
+							"xaxis": { "range": [max(0,v.last_x-NDATA), v.last_x]},
+							"yaxis": { "range": [v.min_y, v.max_y]},
+						},
+					},
+					{
+						"transition": {
+							"duration": 1000,
+							"easing": 'cubic-in-out',
+						},
+#						   "frame": {
+#							   "duration": 500,
+#						   },
+					},
+				],
+			)
+
+
+async def fetch_data(app, *, task_status=trio.TASK_STATUS_IGNORED):
+	app.victron = v = attrdict()
+	v.data = {}
+	v.last_x = 0
+	v.max_x = NDATA
+	v.min_y = 0
+	v.max_y = 1
+	v.new_data = False
+	v.updated = trio.Event()
+
+# ('com.victronenergy.system',
+#  '/Ac/Grid/L1/Power',
+#  {'Text': Variant('s', '15 W'), 'Value': 14.699999809265137}))
+
+	async with Dbus() as dbus:
+		def setter(name,s,p,val):
+			val = val["Value"]
+			try:
+				vv = v.data[name]
+			except KeyError:
+				v.data[name] = vv = DataSet(name)
+
+			vv.add(v.last_x, val)
+			if v.min_y > val:
+				v.min_y = val
+			if v.max_y < val:
+				v.max_y = val
+			v.new_data = True
+
+		
+		async def imp(service, path, name):
+			val = await dbus.importer(service, path, partial(setter,name))
+			if val.exists:
+				setter(name,None,None,{"Value":val.value})
+
+		await imp("com.victronenergy.system","/Dc/Battery/Voltage", "SysBatVoltage")
+		await imp("com.victronenergy.system","/Dc/Battery/Current", "SysBatCurrent")
+		await imp("com.victronenergy.system","/Ac/Grid/L1/Power", "SysPowerGrid1")
+		await imp("com.victronenergy.system","/Ac/ActiveIn/L1/Power", "SysPowerIn1")
+		#await imp("com.victronenergy.vebus.ttyUSB1","/Hub4/L1/AcPowerSetpoint", "PowerSet1")
+		#await imp("com.victronenergy.vebus.ttyUSB1","/Dc/0/Voltage", "MultiBatVoltage1")
+		#await imp("com.victronenergy.vebus.ttyUSB1","/Dc/0/Current", "MultiBatCurrent1")
+		await imp("com.victronenergy.battery.batt","/Dc/0/Voltage", "BmsBatVoltage1")
+		await imp("com.victronenergy.battery.batt","/Dc/0/Current", "BmsBatCurrent1")
+		await imp("com.victronenergy.battery.batt","/Dc/0/Power", "BmsBatPower")
+		task_status.started()
+
+		while True:
+			await trio.sleep(1)
+			v.last_x += 1
+			if not v.new_data:
+				continue
+			v.new_data = False
+
+			min_x = v.last_x-v.max_x
+			for vv in v.data.values():
+				vv.min_x(min_x)
+			v.updated.set()
+			v.updated = trio.Event()
+
+
+async def main():
+	CFG.data.loc.plotly = "static/ext/plotly.min.js"
+	CFG.data.loc.mustache = "static/ext/mustache.js"
+	CFG.mainpage = "static/main.mustache"
+	CFG.data.static = Path("static").absolute()
+
+	del CFG.logging.handlers.logfile
+	CFG.logging.handlers.stderr["level"]="DEBUG"
+	CFG.logging.root["level"]="DEBUG"
+	CFG.server.host="0.0.0.0"
+	CFG.server.port=50080
+
+	logging_config(CFG.logging)
+	app=App(CFG,Work, debug=True)
+	async with trio.open_nursery() as n:
+		await n.start(fetch_data, app)
+		await app.run()
+trio.run(main)
+
+# See "deframed.default.CFG" for defaults and whatnot
