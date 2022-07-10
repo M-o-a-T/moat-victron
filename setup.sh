@@ -52,6 +52,7 @@ else
 fi
 
 ln -sf $(pwd)/victron env/lib/python*/site-packages/
+ln -sf $(pwd)/deframed/deframed env/lib/python*/site-packages/
 cd bus/python
 ln -sf $(pwd)/msgpack.py env/lib/python*/site-packages/
 ln -sf $(pwd)/serialpacker.py env/lib/python*/site-packages/

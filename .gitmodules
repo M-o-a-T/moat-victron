@@ -4,3 +4,6 @@
 [submodule "bus"]
 	path = bus
 	url = https://github.com/M-o-a-T/moat-bus.git
+[submodule "deframed"]
+	path = deframed
+	url = https://github.com/smurfix/deframed.git
