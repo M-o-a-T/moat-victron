@@ -1,0 +1,19 @@
+#!/bin/sh
+
+if test -z "$1" ; then d=$(pwd); else d=$1; fi
+
+mkdir -p static/ext
+
+while read a b ; do
+	test -s static/ext/$a && continue
+	wget -O static/ext/$a $b
+done <<'END'
+mustache.js          https://raw.githubusercontent.com/janl/mustache.js/master/mustache.js
+jquery.min.js        https://code.jquery.com/jquery-3.4.1.slim.min.js
+bootstrap.min.css    https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css
+bootstrap.min.js     https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js
+popper.min.js        https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js
+plotly.min.js        https://cdn.plot.ly/plotly-2.12.1.min.js
+msgpack.min.js       https://raw.githubusercontent.com/ygoe/msgpack.js/master/msgpack.min.js
+END
+

@@ -6,3 +6,6 @@ asyncclick
 anyio_serial
 simpleeval
 ruyaml
+quart_trio
+chevron
+msgpack

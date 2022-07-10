@@ -33,7 +33,9 @@ opkg install \
 	perl-module-time-local \
 
 
-if test ! -e .git ; then
+if test -e .git && test -s ./scripts/setup.sh ; then
+	d=$(pwd)
+else
 	d=/data/moat
 	if test -d $d ; then
 		cd $d
@@ -42,6 +44,7 @@ if test ! -e .git ; then
 		git clone --recurse-submodules https://github.com/M-o-a-T/moat-victron.git $d
 		cd $d
 	fi
+	git checkout --recurse-submodules
 fi
 
 # venv setup
@@ -64,4 +67,5 @@ cd ../..
 env/bin/pip3 install -r requirements.txt
 env/bin/pip3 install --upgrade pip
 
-exec ./setup2.sh $d
+./scripts/webstuff-dl $d
+exec ./scripts/setup2.sh $d
