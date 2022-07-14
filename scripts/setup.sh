@@ -17,9 +17,12 @@ echo "Victron/MoaT setup"
 
 opkg update
 opkg install \
+	gcc \
+	g++ \
 	python3-pip \
 	python3-venv \
 	python3-modules \
+	python3-dev \
 	findutils \
 	psmisc \
 	git \
