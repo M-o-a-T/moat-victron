@@ -1,0 +1,38 @@
+port:
+  dev: "/dev/ttyACM0"
+  socket: "/run/moat.bms"
+  guarded: true
+apps:
+  f:
+    cmd: moat.app.fs.FsCmd
+  batt:
+    app: moat.app.bms.Batt
+    cmd: moat.app.bms.BattCmd
+    cfg:
+      u:
+        max: 28.5
+        min: 23
+        ext:
+          max: 28
+          min: 23.5
+        pin: 26
+        scale: 0.000549
+        offset: 0
+      i:
+        max: 5
+        min: -5
+        ext:
+          max: 2
+          min: -2
+        offset: -0.0335
+        pin: 27
+        ref: 28
+        scale: -0.001
+      poll:
+        d: 50
+        n: 10
+        t: 500
+      rel:
+        pin: 2
+        t: 10000
+        t1: 1000

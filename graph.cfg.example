@@ -1,0 +1,59 @@
+graph:
+  span: 1000
+  groups:
+    power:
+      title: "Power"
+      sources:
+        multi:
+          service: com.victronenergy.system
+          path: "/Ac/ActiveIn/L1/Power"
+          title: "Multi In"
+        grid:
+          service: com.victronenergy.system
+          path: "/Ac/Grid/L1/Power"
+          title: "Grid"
+        battery:
+          service: com.victronenergy.battery.batt
+          path: "/Dc/0/Power"
+          title: "Battery"
+        setpoint:
+          service: com.victronenergy.vebus.ttyUSB1
+          title: "Setpoint"
+          path: "/Hub4/L1/AcPowerSetpoint"
+          poll: 2
+    
+    voltage:
+      title: "Voltage"
+      sources:
+        system:
+          service: com.victronenergy.system
+          path: "/Dc/Battery/Voltage"
+          title: "System"
+        battery:
+          service: com.victronenergy.battery.batt
+          path: "/Dc/0/Voltage"
+          title: "Battery"
+        multi:
+          service: com.victronenergy.vebus.ttyUSB1
+          path: "/Dc/0/Voltage"
+          title: "Multi"
+          poll: 2
+    
+    current:
+      title: "Current"
+      sources:
+        system:
+          service: com.victronenergy.system
+          path: "/Dc/Battery/Current"
+          title: "System"
+        battery:
+          service: com.victronenergy.battery.batt
+          path: "/Dc/0/Current"
+          title: "Battery"
+        multi:
+          service: com.victronenergy.vebus.ttyUSB1
+          path: "/Dc/0/Current"
+          title: "Multi"
+          poll: 2
+    
+  
