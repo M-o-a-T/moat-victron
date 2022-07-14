@@ -351,9 +351,9 @@ class DbusItemImport(object):
 		# TODO: _proxy is being used in settingsdevice.py, make a getter for that
 		self._proxy = await self._bus.get_proxy_object(self._serviceName, self._path)
 
-		if self._createsignal:
-			self._interface = await self._proxy.get_interface(BUSITEM_INTF)
+		self._interface = await self._proxy.get_interface(BUSITEM_INTF)
 
+		if self._createsignal:
 			await self._interface.on_properties_changed(self._properties_changed_handler)
 			self._match = True
 			try:
@@ -366,7 +366,7 @@ class DbusItemImport(object):
 
 		# store the current value in _cachedvalue. When it doesn't exists set _cachedvalue to
 		# None, same as when a value is invalid
-		await self._refreshcachedvalue()
+		await self.refresh()
 
 	async def close(self):
 		try:
@@ -382,7 +382,7 @@ class DbusItemImport(object):
 		self._proxy = None
 		self._interface = None
 
-	async def _refreshcachedvalue(self):
+	async def refresh(self):
 		try:
 			v = await self._interface.call_get_value()
 		except DBusError:
@@ -420,14 +420,14 @@ class DbusItemImport(object):
 
 		# instead of just saving the value, go to the dbus and get it. So we have the right type etc.
 		if r == 0:
-			await self._refreshcachedvalue()
+			await self.refresh()
 
 		return r
 
 	## Resets the item to its default value
 	async def set_default(self):
 		await self._interface.call_set_default()
-		await self._refreshcachedvalue()
+		await self.refresh()
 
 	## Returns the text representation of the value.
 	# For example when the value is an enum/int GetText might return the string
