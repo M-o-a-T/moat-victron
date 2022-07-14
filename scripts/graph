@@ -1,14 +1,13 @@
 #!/usr/bin/python3
 
+import asyncclick as click
 import trio
 from deframed import App,Worker
 from deframed.default import CFG
-from wtforms import Form, BooleanField, StringField, validators
-from wtforms.widgets import TableWidget
+from deframed.util import attrdict, yload, combine_dict
 from pathlib import Path
 from victron.dbus import Dbus
 from functools import partial
-from moat.util import attrdict
 from pprint import pprint
 
 import logging
@@ -17,32 +16,104 @@ logger = logging.getLogger("hello")
 
 NDATA = 1000
 
+def colors(n=0):
+	while True:
+		if n == 1:
+			yield "#b00"
+			yield "#b0f"
+			yield "#b30"
+			yield "#f0b"
+			yield "#b66"
+		elif n == 2:
+			yield "#0b0"
+			yield "#060"
+			yield "#6b0"
+			yield "#0f0"
+		elif n == 3:
+			yield "#00f"
+			yield "#06f"
+			yield "#40f"
+			yield "#6bf"
+		else:
+			yield "#000"
+			yield "#333"
+			yield "#555"
+			yield "#500"
+			yield "#050"
+			yield "#008"
+
+
 class DataSet:
-	def __init__(self, name):
+	"""
+	One sequence of data.
+
+	We store a rolling window of NDATA measurements, but incrementally updating the clients
+	requires keeping some past data, and shifting a 1000+-item array by one every time
+	we update is inefficient.
+	"""
+	# TODO: optionally use numpy (unfortunately not available on Venus)
+
+	def __init__(self, name, axis="y", axis_l="yaxis", color="#fff", title=None):
 		self.name = name
+		self.title = name.capitalize() if title is None else title
 		self.x = []
 		self.y = []
 		self.off = 0
-	
+		self.min_y = None
+		self.max_y = None
+		self.axis = axis
+		self.axis_l = axis_l
+		self.color = color
+
 	def add(self, x, y):
+		if self.x and self.x[-1] == x:
+			return
 		self.x.append(x)
 		self.y.append(y)
+		if self.min_y is None or self.min_y > y:
+			self.min_y = y
+		if self.max_y is None or self.max_y < y:
+			self.max_y = y
 
 	@property
 	def xo(self):
+		"""
+		Current window of up to NDATA items, X coordinate
+		"""
 		return self.x[self.off:]
 
 	@property
 	def yo(self):
+		"""
+		Current window of up to NDATA items, Y coordinate
+		"""
 		return self.y[self.off:]
 
 	def min_x(self, x):
+		recalc_min = False
+		recalc_max = False
 		while len(self.x) > self.off and self.x[self.off] < x:
+			y = self.y[self.off]
+			if y == self.min_y:
+				recalc_min = True
+			if y == self.max_y:
+				recalc_max = True
 			self.off += 1
 		if self.off > NDATA//2:
 			self.x = self.x[self.off-NDATA//4:]
 			self.y = self.y[self.off-NDATA//4:]
 			self.off = NDATA//4
+
+		if recalc_min:
+			y = self.y[self.off]
+			for off in range(self.off+1,len(self.y)):
+				y = min(y,self.y[off])
+			self.min_y = y
+		if recalc_max:
+			y = self.y[self.off]
+			for off in range(self.off+1,len(self.y)):
+				y = max(y,self.y[off])
+			self.max_y = y
 
 class DataSetProxy:
 	def __init__(self, worker, dataset):
@@ -50,10 +121,22 @@ class DataSetProxy:
 		self.data = dataset
 		self.min_x = -1
 		self.max_x = -1
-	
+
 	@property
 	def name(self):
 		return self.data.name
+
+	@property
+	def axis(self):
+		return self.data.axis
+
+	@property
+	def axis_l(self):
+		return self.data.axis_l
+
+	@property
+	def color(self):
+		return self.data.color
 
 	async def send_data(self, n):
 		async def send_all():
@@ -122,8 +205,10 @@ class Work(Worker):
 		await self.debug(True)
 		await self.set_content("df_main", """
 <div>Here's a nice graph.</div>
-<div id="plot" style="width:1200px;height:500px;"></div>
+<div id="plot" style="height: 500px;"></div>
 		""")
+		# style="width:1200px;height:500px;"
+
 		await self.alert("info", None)
 		await self.busy(False)
 		await super().show_main()
@@ -131,7 +216,7 @@ class Work(Worker):
 
 	async def talk(self):
 		v = self.app.victron
-		proxies = [ DataSetProxy(self,ds) for ds in v.data.values() ]
+		proxies = [ DataSetProxy(self,ds) for ds in v.data ]
 		async with trio.open_nursery() as n:
 			for p in proxies:
 				await p.send_data(n)
@@ -146,15 +231,22 @@ class Work(Worker):
 						x = p.px,
 						y = p.py,
 						ids = p.px,
-						line = {"simplify":False},
+						line = {"simplify":False, "shape": "line", "color": p.color},
 						type = "scatter",
+						mode = "lines",
 						name = p.name,
+						yaxis = p.axis,
 					)
 					for p in proxies
 				],
 				dict(
+					title= "System state",
 					margin= { "t": 0 },
-				)
+					legend= { "y": 0.5},
+					# grid= { "columns": 1, "rows": len(v.axes) },
+					**v.axes
+				),
+				{ "displaylogo": False, "responsive": True },
 			])
 
 		while True:
@@ -165,6 +257,17 @@ class Work(Worker):
 					work = (await p.send_data(n)) or work
 			if not work:
 				continue
+
+			axlimits = {}
+			for p in proxies:
+				ax = p.data.axis_l
+				if ax in axlimits:
+					lmin,lmax = axlimits[ax]["range"]
+					lmin = min(lmin, p.data.min_y)
+					lmax = max(lmax, p.data.max_y)
+					axlimits[ax]["range"] = (lmin,lmax)
+				else:
+					axlimits[ax] = {"range": (p.data.min_y,p.data.max_y)}
 
 			await self.eval(
 				var="",
@@ -183,7 +286,7 @@ class Work(Worker):
 						#"traces": [0],
 						"layout": {
 							"xaxis": { "range": [max(0,v.last_x-NDATA), v.last_x]},
-							"yaxis": { "range": [v.min_y, v.max_y]},
+							**axlimits,
 						},
 					},
 					{
@@ -201,82 +304,124 @@ class Work(Worker):
 
 async def fetch_data(app, *, task_status=trio.TASK_STATUS_IGNORED):
 	app.victron = v = attrdict()
-	v.data = {}
+	v.data = []
 	v.last_x = 0
-	v.max_x = NDATA
+	v.ndata = app.cfg.graph.get("span", NDATA)
 	v.min_y = 0
 	v.max_y = 1
 	v.new_data = False
 	v.updated = trio.Event()
+	v.axes = {}
 
-# ('com.victronenergy.system',
-#  '/Ac/Grid/L1/Power',
-#  {'Text': Variant('s', '15 W'), 'Value': 14.699999809265137}))
+	async with trio.open_nursery() as tg:
+		async with Dbus() as dbus:
+			def setter(ds,s,p,val):
+				val = val["Value"]
 
-	async with Dbus() as dbus:
-		def setter(name,s,p,val):
-			val = val["Value"]
-			try:
-				vv = v.data[name]
-			except KeyError:
-				v.data[name] = vv = DataSet(name)
+				ds.add(v.last_x, val)
+				v.new_data = True
 
-			vv.add(v.last_x, val)
-			if v.min_y > val:
-				v.min_y = val
-			if v.max_y < val:
-				v.max_y = val
-			v.new_data = True
+			async def poller(ds, val, poll):
+				while True:
+					await trio.sleep(poll)
+					await val.refresh()
+					setter(ds,None,None,{"Value":val.value})
 
-		
-		async def imp(service, path, name):
-			val = await dbus.importer(service, path, partial(setter,name))
-			if val.exists:
-				setter(name,None,None,{"Value":val.value})
+			async def imp(ds, service, path, poll=None, **kv):
+				if poll is None:
+					val = await dbus.importer(service, path, partial(setter, ds), )
+				else:
+					val = await dbus.importer(service, path, createsignal=False)
+				if val.exists:
+					setter(ds,None,None,{"Value":val.value})
+					if poll:
+						tg.start_soon(poller, ds, val, poll)
 
-		await imp("com.victronenergy.system","/Dc/Battery/Voltage", "SysBatVoltage")
-		await imp("com.victronenergy.system","/Dc/Battery/Current", "SysBatCurrent")
-		await imp("com.victronenergy.system","/Ac/Grid/L1/Power", "SysPowerGrid1")
-		await imp("com.victronenergy.system","/Ac/ActiveIn/L1/Power", "SysPowerIn1")
-		#await imp("com.victronenergy.vebus.ttyUSB1","/Hub4/L1/AcPowerSetpoint", "PowerSet1")
-		#await imp("com.victronenergy.vebus.ttyUSB1","/Dc/0/Voltage", "MultiBatVoltage1")
-		#await imp("com.victronenergy.vebus.ttyUSB1","/Dc/0/Current", "MultiBatCurrent1")
-		await imp("com.victronenergy.battery.batt","/Dc/0/Voltage", "BmsBatVoltage1")
-		await imp("com.victronenergy.battery.batt","/Dc/0/Current", "BmsBatCurrent1")
-		await imp("com.victronenergy.battery.batt","/Dc/0/Power", "BmsBatPower")
-		task_status.started()
+			n = 0
+			def dpos(i,nr):
+				# We want N equal-sized ranges between 0 and 1. The gap of 0.2
+				# shall be distributed equally between these.
+				# i is in [0,nr-1].
 
-		while True:
-			await trio.sleep(1)
-			v.last_x += 1
-			if not v.new_data:
-				continue
-			v.new_data = False
+				sp=0.2  # total inter-group spacing
+				if nr == 1:
+					return 0,1  # easy case; also, don't divide by zero
+				i=nr-1-1  # from the top please
+				x=sp/(nr-1)  # space between two adjacent ranges
+				# We space the ranges equally between [0,1+x] and then
+				# chop off x at the ends, thus the top ends up at 1
+				return i*(1+x)/nr, (i+1)*(1+x)/nr-x
 
-			min_x = v.last_x-v.max_x
-			for vv in v.data.values():
-				vv.min_x(min_x)
-			v.updated.set()
-			v.updated = trio.Event()
+			for gname,dsg in app.cfg.graph.groups.items():
+				cols = colors(n)
+				col = next(cols)
+				yaxis = "yaxis" if n == 0 else f"yaxis{n+1}"
+				yax = "y" if n == 0 else f"y{n+1}"
+				v.axes[yaxis] = dict(
+					title = dsg.get("title",gname.capitalize()),
+					titlefont = { "color": col },
+					tickfont = { "color": col },
+					side = "right",
+					domain = dpos(n,len(app.cfg.graph.groups)),
+					# **({"overlaying":"y"} if n else {}),
+				)
+				for sname,src in dsg.sources.items():
+					ds = DataSet(f"{gname}_{sname}", yax, yaxis, col, src.get("title",gname.capitalize()))
+					v.data.append(ds)
+					try:
+						await imp(ds, **src)
+					except Exception as exc:
+						raise RuntimeError(f"Could not register {gname}.{sname}: {src}") from exc
 
+					col = next(cols)
+				n += 1
 
-async def main():
+			task_status.started()
+
+			t = trio.current_time()
+			while True:
+				t += 1
+				now = trio.current_time()
+				if now < t:
+					await trio.sleep(t-now)
+
+				v.last_x += 1
+				if not v.new_data:
+					continue
+				v.new_data = False
+
+				min_x = v.last_x-v.ndata
+				for vv in v.data:
+					vv.min_x(min_x)
+				v.updated.set()
+				v.updated = trio.Event()
+
+@click.command
+@click.option("--config","--cfg","-c", "cfg", type=click.File(), help="config file")
+async def main(cfg):
+	if cfg:
+		with cfg:
+			cfg = yload(cfg, attr=True)
+	else:
+		cfg = {}
+
+	del CFG.logging.handlers.logfile
 	CFG.data.loc.plotly = "static/ext/plotly.min.js"
 	CFG.data.loc.mustache = "static/ext/mustache.js"
 	CFG.mainpage = "static/main.mustache"
 	CFG.data.static = Path("static").absolute()
-
-	del CFG.logging.handlers.logfile
 	CFG.logging.handlers.stderr["level"]="DEBUG"
 	CFG.logging.root["level"]="DEBUG"
 	CFG.server.host="0.0.0.0"
 	CFG.server.port=50080
 
-	logging_config(CFG.logging)
-	app=App(CFG,Work, debug=True)
+	cfg = combine_dict(cfg, CFG, cls=attrdict)
+	logging_config(cfg.logging)
+	app=App(cfg,Work, debug=True)
 	async with trio.open_nursery() as n:
 		await n.start(fetch_data, app)
 		await app.run()
-trio.run(main)
+
+main(_anyio_backend="trio")
 
 # See "deframed.default.CFG" for defaults and whatnot
