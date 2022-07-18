@@ -4,7 +4,9 @@
 # This script fetches the current MoaT code.
 # It then calls "setup2.sh" which adds the necessary hooks to Venus.
 
-d="$(cd "$(dirname $0)"; pwd)"
+if test -n "$1" ; then d=$1 ; mkdir -p $d; else
+d=/data/moat
+fi
 cd $d
 
 set -ex
@@ -44,8 +46,14 @@ else
 		cd $d
 		git pull
 	else
-		git clone --recurse-submodules https://github.com/M-o-a-T/moat-victron.git $d
+		git clone https://github.com/M-o-a-T/moat-victron.git $d
 		cd $d
+		git submodule update --init bus
+		git submodule update --init deframed
+		cd bus
+		git submodule update --init python/lib/serialpacker
+		git submodule update --init python/moat/util
+		cd ..
 	fi
 	git checkout --recurse-submodules
 fi
