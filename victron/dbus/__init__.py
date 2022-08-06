@@ -137,7 +137,7 @@ class DbusService(object):
 	async def setup_done(self):
 		bus = self._dbusconn
 		self._dbusname = await bus.request_name(self._servicename, NameFlag.DO_NOT_QUEUE)
-		logging.info("registered ourselves on D-Bus as %s" % self._servicename)
+		logging.info("registered ourselves on D-Bus as %s", self._servicename)
 
 	async def close(self):
 		bus = self._dbusconn
@@ -166,7 +166,7 @@ class DbusService(object):
 				self._dbusnodes[subPath] = r = DbusTreeExport(subPath, self)
 				await self._dbusconn.export(subPath, r)
 		self._dbusobjects[path] = item
-		logging.debug('added %s with start value %s. Writeable is %s' % (path, value, writeable))
+		logging.debug('added %s with start value %s. Writeable is %s', path, value, writeable)
 		return item
 
 	# Add the mandatory paths, as per victron dbus api doc
@@ -471,7 +471,7 @@ class DbusTreeExport(dbus.ServiceInterface):
 		logging.debug("DbusTreeExport %r has been created", path)
 
 	async def _get_value_handler(self, path, get_text=False):
-		logging.debug("_get_value_handler called for %s" % path)
+		logging.debug("_get_value_handler called for %s", path)
 		r = {}
 		px = path
 		if not px.endswith('/'):
@@ -546,7 +546,7 @@ class DbusItemExport(dbus.ServiceInterface):
 		await call(self._deletecallback, path)
 		await self.local_set_value(None)
 		self.remove_from_connection()
-		logging.debug("DbusItemExport %s has been removed" % path)
+		logging.debug("DbusItemExport %s has been removed", path)
 
 	## Sets the value. And in case the value is different from what it was, a signal
 	# will be emitted to the dbus. This function is to be used in the python code that
