@@ -478,9 +478,8 @@ class DbusTreeExport(dbus.ServiceInterface):
 			px += '/'
 		for p, item in self._service._dbusobjects.items():
 			if p.startswith(px):
-				v = await item.get_text() if get_text else wrap_dbus_value(item.local_get_value())
+				v = (await item.get_text()) if get_text else item.local_get_value()
 				r[p[len(px):]] = v
-		logging.debug(r)
 		return r
 
 	@dbus.method()
@@ -502,11 +501,11 @@ class DbusRootExport(DbusTreeExport):
 		return changes
 
 	@dbus.method()
-	def GetItems(self) -> 'a{sa{sv}}':
+	async def GetItems(self) -> 'a{sa{sv}}':
 		return {
 			path: {
 				'Value': wrap_dbus_value(item.local_get_value()),
-				'Text': item.get_text() }
+				'Text': wrap_dbus_value(await item.get_text()) }
 			for path, item in self._service._dbusobjects.items()
 		}
 
