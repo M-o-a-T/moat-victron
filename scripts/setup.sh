@@ -68,13 +68,12 @@ else
 	python3 -mvenv env
 fi
 
-ln -sf $(pwd)/victron env/lib/python*/site-packages/
-ln -sf $(pwd)/deframed/deframed env/lib/python*/site-packages/
+ln -sf $(pwd)/victron $d/env/lib/python*/site-packages/
+ln -sf $(pwd)/deframed/deframed $d/env/lib/python*/site-packages/
 cd bus/python
-ln -sf $(pwd)/msgpack.py env/lib/python*/site-packages/
-ln -sf $(pwd)/serialpacker.py env/lib/python*/site-packages/
-ln -sf $(pwd)/moat env/lib/python*/site-packages/
-cd ../..
+ln -sf $(pwd)/serialpacker.py $d/env/lib/python*/site-packages/
+ln -sf $(pwd)/moat $d/env/lib/python*/site-packages/
+cd $d
 
 . env/bin/activate
 
