@@ -20,7 +20,9 @@ echo "Victron/MoaT setup"
 opkg update
 opkg install \
 	gcc \
+	gcc-symlinks \
 	g++ \
+	g++-symlinks \
 	python3-pip \
 	python3-venv \
 	python3-modules \
@@ -30,6 +32,7 @@ opkg install \
 	git \
 	vim \
 	lsof \
+	make \
 	binutils \
 	git-perltools \
 	perl-module-lib \
