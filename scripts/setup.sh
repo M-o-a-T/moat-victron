@@ -33,6 +33,7 @@ opkg install \
 	vim \
 	lsof \
 	make \
+	procps \
 	binutils \
 	git-perltools \
 	perl-module-lib \
