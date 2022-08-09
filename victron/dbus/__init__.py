@@ -137,7 +137,7 @@ class DbusService(object):
 	async def setup_done(self):
 		bus = self._dbusconn
 		self._dbusname = await bus.request_name(self._servicename, NameFlag.DO_NOT_QUEUE)
-		logging.info("registered ourselves on D-Bus as %s" % self._servicename)
+		logging.info("registered ourselves on D-Bus as %s", self._servicename)
 
 	async def close(self):
 		bus = self._dbusconn
@@ -163,10 +163,10 @@ class DbusService(object):
 		for i in range(2, len(spl)):
 			subPath = '/'.join(spl[:i])
 			if subPath not in self._dbusnodes and subPath not in self._dbusobjects:
-				self._dbusnodes[subPath] = r = DbusTreeExport(subPath, self)
+				self._dbusnodes[subPath] = r = DbusTreeExport(self, subPath)
 				await self._dbusconn.export(subPath, r)
 		self._dbusobjects[path] = item
-		logging.debug('added %s with start value %s. Writeable is %s' % (path, value, writeable))
+		logging.debug('added %s with start value %s. Writeable is %s', path, value, writeable)
 		return item
 
 	# Add the mandatory paths, as per victron dbus api doc
@@ -471,16 +471,15 @@ class DbusTreeExport(dbus.ServiceInterface):
 		logging.debug("DbusTreeExport %r has been created", path)
 
 	async def _get_value_handler(self, path, get_text=False):
-		logging.debug("_get_value_handler called for %s" % path)
+		logging.debug("_get_value_handler called for %s", path)
 		r = {}
 		px = path
 		if not px.endswith('/'):
 			px += '/'
 		for p, item in self._service._dbusobjects.items():
 			if p.startswith(px):
-				v = await item.get_text() if get_text else wrap_dbus_value(item.local_get_value())
+				v = (await item.get_text()) if get_text else item.local_get_value()
 				r[p[len(px):]] = v
-		logging.debug(r)
 		return r
 
 	@dbus.method()
@@ -502,11 +501,11 @@ class DbusRootExport(DbusTreeExport):
 		return changes
 
 	@dbus.method()
-	def GetItems(self) -> 'a{sa{sv}}':
+	async def GetItems(self) -> 'a{sa{sv}}':
 		return {
 			path: {
 				'Value': wrap_dbus_value(item.local_get_value()),
-				'Text': item.get_text() }
+				'Text': wrap_dbus_value(await item.get_text()) }
 			for path, item in self._service._dbusobjects.items()
 		}
 
@@ -546,7 +545,7 @@ class DbusItemExport(dbus.ServiceInterface):
 		await call(self._deletecallback, path)
 		await self.local_set_value(None)
 		self.remove_from_connection()
-		logging.debug("DbusItemExport %s has been removed" % path)
+		logging.debug("DbusItemExport %s has been removed", path)
 
 	## Sets the value. And in case the value is different from what it was, a signal
 	# will be emitted to the dbus. This function is to be used in the python code that

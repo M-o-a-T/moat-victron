@@ -185,6 +185,9 @@ def get_product_id():
 #	return content
 #
 
+def wrap_dbus_dict(value):
+    return { str(k): wrap_dbus_value(v) for k,v in value.items() }
+
 def wrap_dbus_value(value):
 	if value is None:
 		return VEDBUS_INVALID
