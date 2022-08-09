@@ -346,7 +346,7 @@ async def fetch_data(app, *, task_status=trio.TASK_STATUS_IGNORED):
 				sp=0.2  # total inter-group spacing
 				if nr == 1:
 					return 0,1  # easy case; also, don't divide by zero
-				i=nr-1-1  # from the top please
+				i=nr-i-1  # from the top please
 				x=sp/(nr-1)  # space between two adjacent ranges
 				# We space the ranges equally between [0,1+x] and then
 				# chop off x at the ends, thus the top ends up at 1
