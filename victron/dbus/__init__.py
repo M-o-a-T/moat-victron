@@ -163,7 +163,7 @@ class DbusService(object):
 		for i in range(2, len(spl)):
 			subPath = '/'.join(spl[:i])
 			if subPath not in self._dbusnodes and subPath not in self._dbusobjects:
-				self._dbusnodes[subPath] = r = DbusTreeExport(subPath, self)
+				self._dbusnodes[subPath] = r = DbusTreeExport(self, subPath)
 				await self._dbusconn.export(subPath, r)
 		self._dbusobjects[path] = item
 		logging.debug('added %s with start value %s. Writeable is %s', path, value, writeable)
