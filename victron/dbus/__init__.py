@@ -587,18 +587,16 @@ class DbusItemExport(dbus.ServiceInterface):
 			return 1  # NOT OK
 
 		newvalue = unwrap_dbus_value(newvalue)
-
 		if newvalue == self._value:
 			return 0  # OK
 
 		# call the callback given to us, and check if new value is OK.
-		if (self._onchangecallback is None or
-				(self._onchangecallback is not None and self._onchangecallback(self.__dbus_object_path__, newvalue))):
-
-			await self.local_set_value(newvalue)
-			return 0  # OK
-
-		return 2  # NOT OK
+		# The callback needs to explicitly return False to reject a change.
+		res = await call(self._onchangecallback,self.__dbus_object_path__, newvalue)
+		if res is not None and not res:
+			return 2
+		await self.local_set_value(newvalue)
+		return 0  # OK
 
 	## Dbus exported method GetDescription
 	#
