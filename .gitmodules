@@ -7,3 +7,6 @@
 [submodule "deframed"]
 	path = deframed
 	url = https://github.com/smurfix/deframed.git
+[submodule "slave"]
+	path = slave
+	url = https://github.com/M-o-a-T/diyBMS-code.git
