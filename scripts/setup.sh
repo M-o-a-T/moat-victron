@@ -50,10 +50,12 @@ else
 		cd $d
 		git submodule update --init bus
 		git submodule update --init deframed
-		cd bus
+		cd $d/bus
 		git submodule update --init python/lib/serialpacker
 		git submodule update --init python/moat/util
-		cd ..
+		cd $d/deframed
+		git submodule update --init deframed/util
+		cd $d
 	fi
 	git checkout --recurse-submodules
 fi
@@ -65,13 +67,12 @@ else
 	python3 -mvenv env
 fi
 
-ln -sf $(pwd)/victron env/lib/python*/site-packages/
-ln -sf $(pwd)/deframed/deframed env/lib/python*/site-packages/
+ln -sf $(pwd)/victron $d/env/lib/python*/site-packages/
+ln -sf $(pwd)/deframed/deframed $d/env/lib/python*/site-packages/
 cd bus/python
-ln -sf $(pwd)/msgpack.py env/lib/python*/site-packages/
-ln -sf $(pwd)/serialpacker.py env/lib/python*/site-packages/
-ln -sf $(pwd)/moat env/lib/python*/site-packages/
-cd ../..
+ln -sf $(pwd)/serialpacker.py $d/env/lib/python*/site-packages/
+ln -sf $(pwd)/moat $d/env/lib/python*/site-packages/
+cd $d
 
 . env/bin/activate
 
