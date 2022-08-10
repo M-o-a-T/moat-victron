@@ -187,15 +187,20 @@ $RS $ddeb/boot/firmware/. $dfirm/.
 
 # kernel
 cd $dres
-cp -a --reflink debian/lib/modules/* venus/lib/modules/
+if [ $DEB = 0 ] ; then
+	cp -au $ddeb/lib/modules/* venus/lib/modules/
+else
+	cp -au --reflink debian/lib/modules/* venus/lib/modules/
+fi
 
 # fix fstab
 cd venus
 sed -i -e '/^\/dev\/root\s/d' -e '/\s\/u-boot\s/d' -e '/\s\/data\s/d' etc/fstab
 if ! grep -qs RASPIROOT etc/fstab ; then
 cat >>etc/fstab <<_
-LABEL=RASPIROOT   /       btrfs   subvol=/venus,noatime,rw  0 1
-LABEL=RASPIROOT   /data   btrfs   subvol=/data,noatime,rw   0 2
+LABEL=RASPIROOT   /               btrfs   subvol=/venus,noatime,rw  0 1
+LABEL=RASPIROOT   /data           btrfs   subvol=/data,noatime,rw   0 2
+LABEL=RASPIBOOT   /boot/firmware  vfat    ro                      0 0
 _
 fi
 
