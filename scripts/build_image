@@ -1,0 +1,210 @@
+#!/bin/bash
+
+set -exu
+
+if test $# != 3 ; then
+	set +x
+	echo "Usage: $0 Debian Venus Result" >&2
+	echo "	   Arguments can be image files, block devices, or directories." >&2
+	echo "	   The result should be at least 16G." >&2
+	exit 2
+fi
+
+if test $(id -u) != 0 ; then
+	set +x
+	echo "You're not root. Restarting with sudo." >&2
+	exec sudo "$(realpath "$0")" "$@"
+	exit 2
+fi
+
+declare -a mpt ## mountpoints
+declare -a lop ## loopbacks
+d=$()
+mpt=()
+lop=()
+ok=0
+
+cleanup() {
+	set +x
+	cd /
+	if [ $ok = 0 ] ; then
+		echo "To evaluate the error, dropping into a shell."
+		echo "EXIT when done."
+		/bin/bash -i
+	fi
+	set -e
+
+	# unmount in reverse order
+	n=${#mpt[@]}   
+	while [ "$n" -gt 0 ] ; do
+		n=$(($n - 1))
+		if ! umount -f "${mpt[$n]}" ; then
+		    sleep 1
+			if ! umount -f "${mpt[$n]}" ; then
+				echo "WARNING unmount of '${mpt[$n]}' failed!" >&2
+				ok=2
+			fi
+		fi
+	done
+
+	# drop loop devices
+	for l in "${lop[@]}"; do
+		losetup -d "$l"
+	done
+
+	# don't clean up if unmount failed
+	# we'd recurse into the thing otherwise
+	test "$ok" = 2 || rm -rf "$tmp"
+}
+trap 'cleanup' EXIT
+
+tmp=$(mktemp -d)
+ddeb="$tmp/deb"
+dvic="$tmp/vic"
+dres="$tmp/res"
+dfirm="$tmp/firm"
+
+mkdir $ddeb $dvic $dres $dfirm
+adeb="$1"
+avic="$2"
+ares="$3"
+
+if test -f "$adeb" ; then
+	if [ "${adeb: -3}" == ".gz" ] ; then
+		gzip -cd "$adeb" > "$tmp/ideb"
+		adeb="$tmp/ideb"
+	fi
+	l=$(losetup -f)
+	losetup -P $l "$adeb"
+	lop+=($l)
+	adeb=$l
+fi
+if test -d "$adeb" ; then
+	ln -s "$(realpath "$1")" $ddeb
+elif test -b "$adeb" ; then
+	if test -b ${l}p1 ; then p="p"; else p=""; fi
+	mount -o ro ${adeb}${p}2 $ddeb
+	mpt+=($ddeb)
+	mount -o ro ${adeb}${p}1 $ddeb/boot/firmware
+	mpt+=($ddeb/boot/firmware)
+else
+	echo "$adeb: not a file, directory, or block device. Exiting." >&2
+	exit 1
+fi
+
+if test -f "$avic" ; then
+	if [ "${avic: -3}" == ".gz" ] ; then
+		gzip -cd "$avic" > "$tmp/ivic"
+		avic="$tmp/ivic"
+	fi
+	l=$(losetup -f)
+	losetup -P $l "$avic"
+	lop+=($l)
+	avic=$l
+fi
+if test -d "$avic" ; then
+	ln -s "$(realpath "$1")" $dvic
+elif test -b "$avic" ; then
+	if test -b ${avic}p1 ; then p="p"; else p=""; fi
+	mount -o ro ${avic}${p}2 $dvic
+	mpt+=($dvic)
+	mount -o ro ${avic}${p}1 $dvic/u-boot
+	mpt+=($dvic/u-boot)
+
+	# /data may not actually exist
+	if mount -o ro ${avic}${p}4 $dvic/data ; then
+		mpt+=($dvic/data)
+	fi
+else
+	echo "$avic: not a file, directory, or block device. Exiting." >&2
+	exit 1
+fi
+
+if ! test -e "$ares" ; then
+	# create a 16gb image
+	dd if=/dev/zero of="$ares" seek=$((16*1024*1024*1024 -1)) bs=1 count=1
+fi
+if test -f "$ares" ; then
+	l=$(losetup -f)
+	losetup -P $l "$ares"
+	lop+=($l)
+	ares=$l
+fi
+if test -d "$ares" ; then
+	ln -s "$(realpath "$1")" $dres
+elif test -b "$ares" ; then
+	if test -b ${ares}p2 ; then p="p"; elif test -b ${ares}2 ; then p=""; else
+		# no, or just a single partition found.
+		sz=$(blockdev --getsz $ares)
+		sz0=2048
+		sz1=$(( 500*1024*2 ))  # 512-byte sectors, so 500MB
+		sz2=$(( $sz - $sz1 - $sz0 ))
+		cat >$tmp/partinfo <<_
+label: dos
+unit: sectors
+
+res1 : start=${sz0}, size=${sz1}, type=0C, bootable
+res2 : start=$(( ${sz0} + ${sz1} )), size=${sz2}, type=83
+
+_
+		sfdisk "$ares" < $tmp/partinfo
+		udevadm settle
+		if test -b ${ares}p1 ; then p="p"; else p=""; fi
+	fi
+	typ=$(blkid ${ares}${p}1 -o value --match-tag TYPE || echo "")
+	if [ "$typ" = "" ] ; then
+		mkfs.vfat -n RASPIBOOT ${ares}${p}1
+	fi
+	typ=$(blkid ${ares}${p}2 -o value --match-tag TYPE || echo "")
+	if [ "$typ" = "" ] ; then
+		mkfs.btrfs -L RASPIROOT ${ares}${p}2
+	fi
+	mount -o subvol=/ ${ares}${p}2 $dres
+	mpt+=($dres)
+	mount ${ares}${p}1 $dfirm
+	mpt+=($dfirm)
+else
+	echo "$ares: not a file, directory, or block device. Exiting." >&2
+	exit 1
+fi
+
+test -d $dres/debian || btrfs subvolume create $dres/debian
+test -d $dres/venus || btrfs subvolume create $dres/venus
+test -d $dres/data || btrfs subvolume create $dres/data
+btrfs subvolume set-default $dres/venus
+
+# OK, now copy stuff over. Don't cross file system bounds, and don't
+# disturb file ownerships.
+RS="rsync -a --partial -x --numeric-ids"
+$RS $dvic/. $dres/venus/.
+$RS $dvic/data/. $dres/data/.
+$RS $ddeb/. $dres/debian/.
+$RS $ddeb/boot/firmware/. $dfirm/.
+
+# kernel
+cd $dres
+cp -a --reflink debian/lib/modules/* venus/lib/modules/
+
+# fix fstab
+cd venus
+sed -i -e '/^\/dev\/root\s/d' -e '/\s\/u-boot\s/d' -e '/\s\/data\s/d' etc/fstab
+if ! grep -qs RASPIROOT etc/fstab ; then
+cat >>etc/fstab <<_
+LABEL=RASPIROOT   /       btrfs   subvol=/venus,noatime,rw  0 1
+LABEL=RASPIROOT   /data   btrfs   subvol=/data,noatime,rw   0 2
+_
+fi
+
+# enable i2c
+cd $dres/venus
+fgrep -xqs i2cdev etc/modules || echo i2cdev >> etc/modules
+cd $dfirm
+grep -qs '^dtparam=i2c_arm=on' config.txt || echo dtparam=i2c_arm=on >>config.txt
+cd $dres/debian
+grep -qs '^dtparam=i2c_arm=on' etc/default/raspi-firmware-custom || echo dtparam=i2c_arm=on >>etc/default/raspi-firmware-custom
+
+
+# all done
+set +x
+echo "All done, unmounting. Good luck!"
+ok=1
