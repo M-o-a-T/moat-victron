@@ -176,8 +176,8 @@ test -d $dres/venus || btrfs subvolume create $dres/venus
 test -d $dres/data || btrfs subvolume create $dres/data
 btrfs subvolume set-default $dres/venus
 
-# OK, now copy stuff over. Don't cross file system bounds, and don't
-# disturb file ownerships.
+# Copy stuff over. Don't cross file system bounds
+# and don't disturb file ownerships.
 RS="rsync -a --partial -x --numeric-ids"
 $RS $dvic/. $dres/venus/.
 $RS $dvic/data/. $dres/data/.
