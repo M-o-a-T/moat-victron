@@ -24,6 +24,9 @@ mpt=()
 lop=()
 ok=0
 
+# set this to zero if you don't want to install Debian also
+DEB=1
+
 cleanup() {
 	set +x
 	cd /
@@ -178,8 +181,9 @@ btrfs subvolume set-default $dres/venus
 RS="rsync -a --partial -x --numeric-ids"
 $RS $dvic/. $dres/venus/.
 $RS $dvic/data/. $dres/data/.
-$RS $ddeb/. $dres/debian/.
 $RS $ddeb/boot/firmware/. $dfirm/.
+
+[ $DEB=0 ] || $RS $ddeb/. $dres/debian/.
 
 # kernel
 cd $dres
