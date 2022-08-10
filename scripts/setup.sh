@@ -54,10 +54,12 @@ else
 		cd $d
 		git submodule update --init bus
 		git submodule update --init deframed
-		cd bus
+		cd $d/bus
 		git submodule update --init python/lib/serialpacker
 		git submodule update --init python/moat/util
-		cd ..
+		cd $d/deframed
+		git submodule update --init deframed/util
+		cd $d
 	fi
 	git checkout --recurse-submodules
 fi
