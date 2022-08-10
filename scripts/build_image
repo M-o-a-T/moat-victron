@@ -206,7 +206,7 @@ fi
 
 # enable i2c
 cd $dres/venus
-fgrep -xqs i2cdev etc/modules || echo i2cdev >> etc/modules
+fgrep -xqs i2c_dev etc/modules || echo i2c_dev >> etc/modules
 cd $dfirm
 grep -qs '^dtparam=i2c_arm=on' config.txt || echo dtparam=i2c_arm=on >>config.txt
 cd $dres/debian
