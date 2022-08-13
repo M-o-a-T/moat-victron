@@ -171,7 +171,7 @@ class DbusService(object):
 
 	# Add the mandatory paths, as per victron dbus api doc
 	async def add_mandatory_paths(self, processname, processversion, connection,
-			deviceinstance, productid, productname, firmwareversion, hardwareversion, connected):
+			deviceinstance, productid, productname, firmwareversion, hardwareversion, connected, serial):
 		await self.add_path('/Mgmt/ProcessName', processname)
 		await self.add_path('/Mgmt/ProcessVersion', processversion)
 		await self.add_path('/Mgmt/Connection', connection)
@@ -183,6 +183,7 @@ class DbusService(object):
 		await self.add_path('/FirmwareVersion', firmwareversion)
 		await self.add_path('/HardwareVersion', hardwareversion)
 		await self.add_path('/Connected', connected)
+		await self.add_path('/Serial', serial)
 
 	# Callback function that is called from the DbusItemExport objects when a value changes. This function
 	# maps the change-request to the onchangecallback given to us for this specific path.
