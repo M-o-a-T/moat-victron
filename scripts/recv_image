@@ -39,8 +39,10 @@ echo Fetching data
 if ! $RS "SRC" . ; then
 	echo "Reception failed." >&2
 	btrfs subvolume delete "/mnt/$DIR"
-
 fi
+
+echo Linking kernel modules
+cp -r --reflink /lib/modules/$(uname -r) /mnt/$DIR/lib/modules/
 
 echo "Done. Use 'boot_image $DIR' to remember to boot from the new image." >&2
 
