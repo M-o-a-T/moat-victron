@@ -201,8 +201,15 @@ if ! grep -qs RASPIROOT etc/fstab ; then
 cat >>etc/fstab <<_
 LABEL=RASPIROOT   /               btrfs   subvol=/venus,noatime,rw  0 1
 LABEL=RASPIROOT   /data           btrfs   subvol=/data,noatime,rw   0 2
-LABEL=RASPIBOOT   /boot/firmware  vfat    ro                        0 0
-LABEL=RASPIBOOT   /opt/debian     btrfs   subvol=/debian,noatime    0 2
+LABEL=RASPIBOOT   /boot/firmware  vfat    noatime,rw                0 0
+LABEL=RASPIROOT   /opt/debian     btrfs   subvol=/debian,noatime    0 2
+LABEL=RASPIBOOT   /opt/debian/boot/firmware vfat   noatime,rw  0 0
+/proc             /opt/debian/proc            -   bind  0 0
+/sys              /opt/debian/sys             -   bind  0 0
+/dev              /opt/debian/dev             -   bind  0 0
+/dev/pts          /opt/debian/dev/pts         -   bind  0 0
+/run              /opt/debian/run             -   bind  0 0
+/etc/resolv.conf  /opt/debian/etc/resolv.conf -   bind  0 0
 _
 fi
 
@@ -215,7 +222,6 @@ cd $dfirm
 grep -qs '^dtparam=i2c_arm=on' config.txt || echo dtparam=i2c_arm=on >>config.txt
 cd $dres/debian
 grep -qs '^dtparam=i2c_arm=on' etc/default/raspi-firmware-custom || echo dtparam=i2c_arm=on >>etc/default/raspi-firmware-custom
-
 
 # all done
 set +x
