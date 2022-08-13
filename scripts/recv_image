@@ -44,5 +44,7 @@ fi
 echo Linking kernel modules
 cp -r --reflink /lib/modules/$(uname -r) /mnt/$DIR/lib/modules/
 
+cd /mnt/debian/lib; for f in ld-*.so.* ; do test -e /mnt/$DIR/lib/$f || ln -s /opt/debian/lib/$f /mnt/$DIR/lib/ ; done
+
 echo "Done. Use 'boot_image $DIR' to remember to boot from the new image." >&2
 

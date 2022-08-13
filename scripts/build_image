@@ -201,9 +201,12 @@ if ! grep -qs RASPIROOT etc/fstab ; then
 cat >>etc/fstab <<_
 LABEL=RASPIROOT   /               btrfs   subvol=/venus,noatime,rw  0 1
 LABEL=RASPIROOT   /data           btrfs   subvol=/data,noatime,rw   0 2
-LABEL=RASPIBOOT   /boot/firmware  vfat    ro                      0 0
+LABEL=RASPIBOOT   /boot/firmware  vfat    ro                        0 0
+LABEL=RASPIBOOT   /opt/debian     btrfs   subvol=/debian,noatime    0 2
 _
 fi
+
+cd $ddeb/lib; for f in ld-*.so.* ; do test -e $dvic/lib/$f || ln -s /opt/debian/lib/$f $dvic/lib/ ; done
 
 # enable i2c
 cd $dres/venus
