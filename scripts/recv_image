@@ -1,0 +1,46 @@
+#!/bin/bash
+
+set -exu
+
+if test $# != 2 ; then
+	set +x
+	echo "Usage: $0 NAME SOURCE" >&2
+	echo "	   This script creates a new subvolume. It uses rsync" >&2
+	echo "	   to copy SOURCE to it." >&2
+	exit 2
+fi
+
+if test $(id -u) != 0 ; then
+	set +x
+	echo "You're not root. Restarting with sudo." >&2
+	exec sudo "$(realpath "$0")" "$@"
+	exit 2
+fi
+
+DIR="$1"
+SRC="$2"
+DEV=$(mount | grep " on / " | sed -e 's/ .*//')
+mount $DEV -o subvolid=5 /mnt
+
+cleanup() {
+	umount /mnt
+}
+trap 'cleanup' EXIT
+
+if test -d "/mnt/$DIR" ; then
+	echo "Subvolume '$DIR' already exists. Exiting." >&2
+	exit 1
+fi
+
+btrfs subvolume create "/mnt/$DIR"
+cd "/mnt/$DIR"
+RS="rsync -a --partial -x --numeric-ids"
+echo Fetching data
+if ! $RS "SRC" . ; then
+	echo "Reception failed." >&2
+	btrfs subvolume delete "/mnt/$DIR"
+
+fi
+
+echo "Done. Use 'boot_image $DIR' to remember to boot from the new image." >&2
+

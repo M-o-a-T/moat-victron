@@ -1,0 +1,45 @@
+#!/bin/bash
+
+set -exu
+
+if test $# != 1 ; then
+	set +x
+	echo "Usage: $0 NAME" >&2
+	echo "	   This script tells your system to boot from the named" >&2
+	echo "	   subvolume when it is restarted." >&2
+	exit 2
+fi
+
+if test $(id -u) != 0 ; then
+	set +x
+	echo "You're not root. Restarting with sudo." >&2
+	exec sudo "$(realpath "$0")" "$@"
+	exit 2
+fi
+
+DIR="$1"
+DEV=$(mount | grep " on / " | sed -e 's/ .*//')
+mount $DEV -o subvolid=5 /mnt
+
+cleanup() {
+	umount /mnt
+}
+trap 'cleanup' EXIT
+
+if ! test -d "/mnt/$DIR" ; then
+	echo "Subvolume '$DIR' does not exist. Exiting." >&2
+	exit 1
+fi
+
+if ! test -d "/mnt/$DIR/sbin/init" ; then
+	echo "Subvolume '$DIR' does not seem to be an OS volume. Exiting." >&2
+	exit 1
+fi
+
+if !  btrfs subvolume set-default "/mnt/$DIR" ; then
+	echo "Could not set subvolume '$DIR' to be the default volume. Exiting." >&2
+	exit 1
+fi
+
+echo "Done. Reboot ('shutdown -r now') to use the new image." >&2
+
