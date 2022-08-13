@@ -4,9 +4,10 @@ set -exu
 
 if test $# != 3 ; then
 	set +x
-	echo "Usage: $0 Debian Venus Result" >&2
-	echo "	   Arguments can be image files, block devices, or directories." >&2
-	echo "	   The result should be at least 16G." >&2
+	echo "Usage: $0 Debian Venus Destination" >&2
+	echo "	   Source arguments can be image files, block devices, or directories." >&2
+	echo "	   The destination should be an image file or a block device" >&2
+	echo "	   of at least 4 GBytes." >&2
 	exit 2
 fi
 
