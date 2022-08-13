@@ -46,5 +46,8 @@ cp -r --reflink /lib/modules/$(uname -r) /mnt/$DIR/lib/modules/
 
 cd /mnt/debian/lib; for f in ld-*.so.* ; do test -e /mnt/$DIR/lib/$f || ln -s /opt/debian/lib/$f /mnt/$DIR/lib/ ; done
 
+cp /etc/fstab /mnt/$DIR/etc
+test ! -e /usr/local/bin/btrfs || cp /usr/local/bin/btrfs /mnt/$DIR/etc
+
 echo "Done. Use 'boot_image $DIR' to remember to boot from the new image." >&2
 
