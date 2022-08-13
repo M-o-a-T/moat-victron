@@ -1,0 +1,18 @@
+#!/bin/bash
+bus=$(dbus -y | fgrep com.victronenergy.vebus.)
+
+set -e
+
+while : ; do
+
+n=0
+for v in $@ ; do
+n=$(($n + 1))
+
+dbus -y $bus /Hub4/L$n/AcPowerSetpoint SetValue %$v >/dev/null
+
+done
+sleep 5
+
+done
+
