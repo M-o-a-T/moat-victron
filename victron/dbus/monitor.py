@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-## @package dbus_vrm
+## @package dbus.monitor
 # This code takes care of the D-Bus interface (not all of below is implemented yet):
 # - on startup it scans the dbus for services we know. For each known service found, it searches for
 #   objects/paths we know. Everything we find is stored in items{}, and an event is registered: if a
-#   value changes weĺl be notified and can pass that on to our owner. For example the vrmLogger.
-#   we know.
+#   value changes we'll be notified and can pass that on to our owner. For example the vrmLogger.
+#
 # - after startup, it continues to monitor the dbus:
 #		1) when services are added we do the same check on that
 #		2) when services are removed, we remove any items that we had that referred to that service
@@ -33,7 +33,7 @@ from ve_utils import exit_on_error, wrap_dbus_value, unwrap_dbus_value
 notfound = object() # For lookups where None is a valid result
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+
 class SystemBus(dbus.bus.BusConnection):
 	def __new__(cls):
 		return dbus.bus.BusConnection.__new__(cls, dbus.bus.BusConnection.TYPE_SYSTEM)
@@ -42,9 +42,9 @@ class SessionBus(dbus.bus.BusConnection):
 	def __new__(cls):
 		return dbus.bus.BusConnection.__new__(cls, dbus.bus.BusConnection.TYPE_SESSION)
 
-class MonitoredValue(object):
+class MonitoredValue:
 	def __init__(self, value, text, options):
-		super(MonitoredValue, self).__init__()
+		super().__init__()
 		self.value = value
 		self.text = text
 		self.options = options
@@ -53,11 +53,12 @@ class MonitoredValue(object):
 	def __iter__(self):
 		return iter((self.value, self.text, self.options))
 
-class Service(object):
-	whentologoptions = ['configChange', 'onIntervalAlwaysAndOnEvent',
-		'onIntervalOnlyWhenChanged', 'onIntervalAlways', 'never']
+
+class Service:
+	whentologoptions = {'configChange', 'onIntervalAlwaysAndOnEvent',
+		'onIntervalOnlyWhenChanged', 'onIntervalAlways', 'never'}
 	def __init__(self, id, serviceName, deviceInstance):
-		super(Service, self).__init__()
+		super().__init__()
 		self.id = id
 		self.name = serviceName
 		self.paths = {}
@@ -73,9 +74,13 @@ class Service(object):
 	# For legacy code, attributes can still be accessed as if keys from a
 	# dictionary.
 	def __setitem__(self, key, value):
-		self.__dict__[key] = value
+		setattr(self, key, value)
+
 	def __getitem__(self, key):
-		return self.__dict__[key]
+		try:
+			return getattr(self, key)
+		except AttributeError:
+			return KeyError(key) from None
 
 	def set_seen(self, path):
 		self._seen.add(path)
@@ -87,13 +92,15 @@ class Service(object):
 	def service_class(self):
 		return '.'.join(self.name.split('.')[:3])
 
-class DbusMonitor(object):
+
+class DbusMonitor:
 	## Constructor
 	def __init__(self, dbusTree, valueChangedCallback=None, deviceAddedCallback=None,
 					deviceRemovedCallback=None, vebusDeviceInstance0=False):
 		# valueChangedCallback is the callback that we call when something has changed.
 		# def value_changed_on_dbus(dbusServiceName, dbusPath, options, changes, deviceInstance):
-		# in which changes is a tuple with GetText() and GetValue()
+		# in which `changes` is a tuple with GetText() and GetValue()
+		super().__init__()
 		self.valueChangedCallback = valueChangedCallback
 		self.deviceAddedCallback = deviceAddedCallback
 		self.deviceRemovedCallback = deviceRemovedCallback
