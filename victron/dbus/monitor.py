@@ -165,7 +165,7 @@ class DbusMonitor:
 
 		elif name in self.servicesByName:
 			# it disappeared, we need to remove it.
-			logger.info("%s disappeared from the dbus. Removing it from our lists" % name)
+			logger.info("%s disappeared from the dbus. Removing it from our lists", name)
 			service = self.servicesByName[name]
 			deviceInstance = service['deviceInstance']
 			del self.servicesById[service.id]
@@ -181,7 +181,7 @@ class DbusMonitor:
 		try:
 			return self.scan_dbus_service_inner(serviceName)
 		except:
-			logger.error("Ignoring %s because of error while scanning:" % (serviceName))
+			logger.error("Ignoring %s because of error while scanning:", serviceName)
 			traceback.print_exc()
 			return False
 
@@ -199,10 +199,10 @@ class DbusMonitor:
 
 		paths = self.dbusTree.get('.'.join(serviceName.split('.')[0:3]), None)
 		if paths is None:
-			logger.debug("Ignoring service %s, not in the tree" % serviceName)
+			logger.debug("Ignoring service %s, not in the tree", serviceName)
 			return False
 
-		logger.info("Found: %s, scanning and storing items" % serviceName)
+		logger.info("Found: %s, scanning and storing items", serviceName)
 		serviceId = self.dbusConn.get_name_owner(serviceName)
 
 		# we should never be notified to add a D-Bus service that we already have. If this assertion
@@ -223,12 +223,12 @@ class DbusMonitor:
 				di = self.dbusConn.call_blocking(serviceName,
 					'/DeviceInstance', None, 'GetValue', '', [])
 			except dbus.exceptions.DBusException:
-				logger.info("       %s was skipped because it has no device instance" % serviceName)
+				logger.info("       %s was skipped because it has no device instance", serviceName)
 				return False # Skip it
 			else:
 				di = int(di)
 
-		logger.info("       %s has device instance %s" % (serviceName, di))
+		logger.info("       %s has device instance %s", serviceName, di)
 		service = Service(serviceId, serviceName, di)
 
 		# Let's try to fetch everything in one go
@@ -265,7 +265,7 @@ class DbusMonitor:
 
 					# TODO org.freedesktop.DBus.Error.UnknownMethod really
 					# shouldn't happen but sometimes does.
-					logger.debug("%s %s does not exist (yet)" % (serviceName, path))
+					logger.debug("%s %s does not exist (yet)", serviceName, path)
 					value = None
 					text = None
 
@@ -275,7 +275,7 @@ class DbusMonitor:
 				service[options['whenToLog']].append(path)
 
 
-		logger.debug("Finished scanning and storing items for %s" % serviceName)
+		logger.debug("Finished scanning and storing items for %s", serviceName)
 
 		# Adjust self at the end of the scan, so we don't have an incomplete set of
 		# data if an exception occurs during the scan.
@@ -525,11 +525,11 @@ class DbusMonitor:
 # Example function that can be used as a starting point to use this code
 def value_changed_on_dbus(dbusServiceName, dbusPath, dict, changes, deviceInstance):
 	logger.debug("0 ----------------")
-	logger.debug("1 %s%s changed" % (dbusServiceName, dbusPath))
-	logger.debug("2 vrm dict     : %s" % dict)
-	logger.debug("3 changes-text: %s" % changes['Text'])
-	logger.debug("4 changes-value: %s" % changes['Value'])
-	logger.debug("5 deviceInstance: %s" % deviceInstance)
+	logger.debug("1 %s%s changed", dbusServiceName, dbusPath)
+	logger.debug("2 vrm dict     : %s", dict)
+	logger.debug("3 changes-text: %s", changes['Text'])
+	logger.debug("4 changes-value: %s", changes['Value'])
+	logger.debug("5 deviceInstance: %s", deviceInstance)
 	logger.debug("6 - end")
 
 
