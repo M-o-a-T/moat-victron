@@ -91,7 +91,7 @@ class Client(object):
                 d.init(self.dbusconn)
                 d.nosave = False
                 self.devices.append(d)
-            except:
+            except Exception:
                 log.info('Error initialising %s, skipping', d)
                 traceback.print_exc()
 
@@ -115,7 +115,7 @@ class Client(object):
         try:
             dev.update()
             dev.err_count = 0
-        except:
+        except Exception:
             dev.err_count += 1
             if dev.err_count == MAX_ERRORS:
                 log.info('Device %s failed', dev)
@@ -135,7 +135,7 @@ class Client(object):
                 d.init(self.dbusconn)
                 d.nosave = nosave
                 self.devices.append(d)
-            except:
+            except Exception:
                 failed.append(str(d))
                 d.destroy()
 
@@ -224,7 +224,7 @@ class Client(object):
     def update_timer(self):
         try:
             self.update()
-        except:
+        except Exception:
             log.error('Uncaught exception in update')
             traceback.print_exc()
 
