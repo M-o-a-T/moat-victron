@@ -629,7 +629,7 @@ class DbusItemExport(dbus.ServiceInterface):
 		if self._gettextcallback is not None:
 			return await call(self._gettextcallback, self._path, self._value)
 
-		if self._path == '/ProductId':
+		if self._path == '/ProductId' and isinstance(self._value, int):
 			return "0x%X" % self._value
 
 		return str(self._value)
