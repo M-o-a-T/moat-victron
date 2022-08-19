@@ -1,0 +1,23 @@
+IMHO there is no sensible reason to ever let the Multi override the BMS's
+max charge voltage.
+
+XXX take the minimum of the two?
+
+--- /tmp/dvcc	2022-08-18 10:23:57.312663058 +0200
++++ ./dbus-systemcalc-py/delegates/dvcc.py	2022-08-18 10:23:59.952663057 +0200
+@@ -1071,11 +1071,12 @@
+ 		# no ESS/Hub-1/Hub-4), we use the max charge voltage provided by the
+ 		# BMS (if any). This will probably prevent feedback, but that is
+ 		# probably not allowed anyway.
++
+ 		charge_voltage = None
+-		if self._multi.active:
+-			charge_voltage = self._multi.hub_voltage
+-		if charge_voltage is None and bms_charge_voltage is not None:
++		if charge_voltage is None:
+ 			charge_voltage = bms_charge_voltage
++		if charge_voltage is None and self._multi.active:
++			charge_voltage = self._multi.hub_voltage
+ 		if charge_voltage is not None:
+ 			try:
+ 				charge_voltage += self.solarvoltageoffset

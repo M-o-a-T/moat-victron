@@ -30,7 +30,9 @@ _
 cp serial/udev.rules /etc/udev/rules.d/serial-starter-aux.rules
 
 echo "Patching. Might already be applied: if so, ignore the errors."
-patch -p0 /opt/victronenergy/dbus-systemcalc-py/delegates/dvcc.py <../patches/systemcalc_dvcc_hubvoltage.diff
+for f in ../patches/systemcalc_dvcc_*.diff ; do
+	patch -p0 /opt/victronenergy/dbus-systemcalc-py/delegates/dvcc.py <$f
+done
 
 set +x
 echo OK, all done.

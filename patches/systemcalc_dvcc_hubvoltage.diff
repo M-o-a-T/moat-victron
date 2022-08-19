@@ -1,3 +1,5 @@
+A hub voltage of zero should be treated as not set.
+
 diff --git delegates/dvcc.py delegates/dvcc.py
 index 19589f5..e9e6214 100644
 --- delegates/dvcc.py

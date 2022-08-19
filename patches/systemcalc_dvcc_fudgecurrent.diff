@@ -1,0 +1,27 @@
+Current meters may well differ, so when the current from the chargers
+almost-but-not-quite equals the current pulled by the inverter, the
+residual current may be more than the BMS can burn.
+
+This is not a proper fix for zero battery current;
+the correct way is to limit the charge voltage.
+
+--- /tmp/dvcc	2022-08-18 10:23:57.312663058 +0200
++++ ./dbus-systemcalc-py/delegates/dvcc.py	2022-08-18 10:41:45.584094445 +0200
+@@ -428,7 +428,7 @@
+ 					# limit to the charger
+ 					sc = chargers[0]
+ 					cc = min(ceil(max_charge_current), sc.currentlimit)
+-					sc.maxchargecurrent = cc
++					sc.maxchargecurrent = cc*0.95
+ 				elif max_charge_current > self.capacity * 0.95:
+ 					# Another simple case, we're asking for more than our
+ 					# combined capacity (with a 5% margin)
+@@ -436,7 +436,7 @@
+ 				else:
+ 					# The hard case, we have more than one CC and we want
+ 					# less than our capacity
+-					self._distribute_current(chargers, max_charge_current)
++					self._distribute_current(chargers, max_charge_current*0.95)
+ 
+ 		# Return flags of what we did
+ 		return voltage_written, int(network_mode_written and max_charge_current is not None)
