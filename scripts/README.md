@@ -2,9 +2,13 @@
 
 ## Running Debian and Venus on the same machine
 
+### build_image
+
 Use this script on your desktop machine to build a combination Venus+Debian image.
 
-The result can be written to an image file, or directly to an SD card.
+Usage: `build_image DEB_IMG VENUS_IMG DEST_DEVICE"
+
+Tested with a Raspberry Pi 3, might need slight modifications for other Pi models.
 
 
 ### setupdeb.sh
