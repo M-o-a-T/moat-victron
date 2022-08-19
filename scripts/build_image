@@ -210,6 +210,7 @@ LABEL=RASPIBOOT   /opt/debian/boot/firmware vfat   noatime,rw  0 0
 /dev/pts          /opt/debian/dev/pts         -   bind  0 0
 /run              /opt/debian/run             -   bind  0 0
 /etc/resolv.conf  /opt/debian/etc/resolv.conf -   bind  0 0
+/data/home/root   /opt/debian/root            -   bind  0 0
 _
 fi
 
