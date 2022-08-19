@@ -1,16 +1,23 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import sys
-from traceback import print_exc
+import inspect
 from os import _exit as os_exit
 from os import statvfs
 from subprocess import check_output, CalledProcessError
+from contextlib import asynccontextmanager
+from traceback import print_exc
+
+import anyio
+from asyncdbus.service import ServiceInterface
+from asyncdbus.signature import Variant
+from asyncdbus.constants import NameFlag
+
 import logging
-import inspect
-import asyncdbus.signature as dbus
 logger = logging.getLogger(__name__)
 
-VEDBUS_INVALID = dbus.Variant('ai', [])
+
+VEDBUS_INVALID = Variant('ai', [])
 
 class NoVrmPortalIdError(Exception):
 	pass
@@ -107,9 +114,9 @@ def get_free_space(path):
 
 	try:
 		s = statvfs(path)
-		result = s.f_frsize * s.f_bavail     # Number of free bytes that ordinary users
+		result = s.f_frsize * s.f_bavail	 # Number of free bytes that ordinary users
 	except Exception as ex:
-		logger.info("Error while retrieving free space for path %s: %s" % (path, ex))
+		logger.exception("Error while retrieving free space for path %s", path)
 
 	return result
 
@@ -172,99 +179,74 @@ def get_product_id():
 	}.get(name, 'C003') # C003 is Generic
 
 
-# Returns False if it cannot open the file. Otherwise returns its rstripped contents
-#def read_file(path):
-#	content = False
-#
-#	try:
-#		with open(path, 'r') as f:
-#			content = f.read().rstrip()
-#	except Exception as ex:
-#		logger.debug("Error while reading %s: %s" % (path, ex))
-#
-#	return content
-#
-
 def wrap_dbus_dict(value):
-    return { str(k): wrap_dbus_value(v) for k,v in value.items() }
+	"""as wrap_dbus_value but doesn't wrap the dict itself"""
+	return { str(k): wrap_dbus_value(v) for k,v in value.items() }
 
 def wrap_dbus_value(value):
+	"""
+	Wrap an arbitrary value in Dbus variant records.
+	None is encoded as a VEDBUS_INVALID object, i.e. an empty signed-integer array
+	"""
 	if value is None:
 		return VEDBUS_INVALID
-	if isinstance(value, dbus.Variant):
-            # already wrapped. No, we won't dual-wrap it.
-            return value
+	if isinstance(value, Variant):
+		# already wrapped. No, we won't dual-wrap it.
+		return value
 	if isinstance(value, float):
-		return dbus.Variant('d', value)
+		return Variant('d', value)
 	if isinstance(value, bool):
-		return dbus.Variant('b', value)
+		return Variant('b', value)
 	if isinstance(value, int):
 		if 0 <= value < 2**8:
-			return dbus.Variant('y', value)
+			return Variant('y', value)
 		if -2**15 <= value < 2**15:
-			return dbus.Variant('n', value)
+			return Variant('n', value)
 		if 0 <= value < 2**16:
-			return dbus.Variant('q', value)
+			return Variant('q', value)
 		if -2**31 <= value < 2**31:
-			return dbus.Variant('i', value)
+			return Variant('i', value)
 		if 0 <= value < 2**32:
-			return dbus.Variant('u', value)
+			return Variant('u', value)
 		if -2**63 <= value < 2**63:
-			return dbus.Variant('x', value)
+			return Variant('x', value)
 		if 0 <= value < 2**64:
-			return dbus.Variant('t', value)
+			return Variant('t', value)
 
 		raise OverflowError(value)
 
 	if isinstance(value, str):
-		return dbus.Variant('s', value)
+		return Variant('s', value)
 	if isinstance(value, (bytes,bytearray)):
-		return dbus.Variant('ay', value)
+		return Variant('ay', value)
 	if isinstance(value, list):
 		if len(value) == 0:
 			# If the list is empty we cannot infer the type of the contents. So assume unsigned integer.
 			# A (signed) integer is dangerous, because an empty list of signed integers is used to encode
 			# an invalid value.
-			return dbus.Variant('au', [])
-		return dbus.Variant('av', [wrap_dbus_value(x) for x in value])
+			return Variant('au', [])
+		return Variant('av', [wrap_dbus_value(x) for x in value])
 	if isinstance(value, dict):
-		# Wrapping the keys of the dictionary causes D-Bus errors like:
-		# 'arguments to dbus_message_iter_open_container() were incorrect,
-		# assertion "(type == DBUS_TYPE_ARRAY && contained_signature &&
-		# *contained_signature == DBUS_DICT_ENTRY_BEGIN_CHAR) || (contained_signature == NULL ||
-		# _dbus_check_is_valid_signature (contained_signature))" failed in file ...'
-		return dbus.Variant('a{sv}', {k: wrap_dbus_value(v) for k, v in value.items()})
+		# keys cannot be wrapped
+		# non-string keys are not supported here
+		return Variant('a{sv}', {k: wrap_dbus_value(v) for k, v in value.items()})
 	raise ValueError("No idea how to encode %r (%s)" % (value,type(value).__name__))
 
 
-dbus_int_types = (dbus.Int32, dbus.UInt32, dbus.Byte, dbus.Int16, dbus.UInt16, dbus.UInt32, dbus.Int64, dbus.UInt64)
-
-
 def unwrap_dbus_value(val):
-	"""Converts D-Bus values back to the original type. For example if val is of type DBus.Double,
-	a float will be returned."""
-	breakpoint()
-	if isinstance(val, dbus_int_types):
-		return int(val)
-	if isinstance(val, dbus.Double):
-		return float(val)
-	if isinstance(val, dbus.Array):
-		v = [unwrap_dbus_value(x) for x in val]
-		return None if len(v) == 0 else v
-	if isinstance(val, (dbus.Signature, dbus.String)):
-		return str(val)
-	# Python has no byte type, so we convert to an integer.
-	if isinstance(val, dbus.Byte):
-		return int(val)
-	if isinstance(val, dbus.ByteArray):
-		return bytes(val)
+	"""Unwraps values wrapped in Variant objects."""
+	if not isinstance(val, Variant):
+		return val
+	if val == VEDBUS_INVALID:
+		return None
+
+	val = val.value
+
 	if isinstance(val, (list, tuple)):
 		return [unwrap_dbus_value(x) for x in val]
-	if isinstance(val, (dbus.Dictionary, dict)):
-		# Do not unwrap the keys, see comment in wrap_dbus_value
+	elif isinstance(val, dict):
+		# keys cannot be wrapped
 		return dict([(x, unwrap_dbus_value(y)) for x, y in val.items()])
-	if isinstance(val, dbus.Boolean):
-		return bool(val)
 	return val
 
 
@@ -290,14 +272,82 @@ class CtxObj:
 		return self.__ctx.__aexit__(*tb)
 
 
+INTF = "org.m_o_a_t"
+NAME = "org.m_o_a_t"
+
+def reg_name(base, name):
+	if name is None:
+		name = NAME
+	elif name[0] == "+":
+		name = f"{base}.{name[1:]}"
+	elif '.' not in name:
+		name = f"{base}.{name}"
+	return name
+
+@asynccontextmanager
+async def DbusName(bus, name=None):
+	"""
+	An async context manager that holds a DBus name while it's active.
+
+	Usage::
+		async with DbusName(dbus, f"com.victronenergy.battery.{self.busname}"):
+			# name is registered here
+			...
+		# name is no longer registered
+		...
+
+	"""
+	await bus.request_name(reg_name(NAME, name), NameFlag.DO_NOT_QUEUE)
+	try:
+		yield None
+	finally:
+		with anyio.move_on_after(2, shield=True):
+			await bus.release_name(name)
+
+
+class DbusInterface(ServiceInterface, CtxObj):
+	"""
+	A ServceInterface wrapper that exports itself with a context.
+
+	Usage::
+
+		class MainInterface(DbusInterface):
+			def __init__(self, main, dbus):
+				self.main = main
+				# if you have more than one MainCode object, vary the path
+				super().__init__(dbus, "/main", "org.example.test.main")
+
+		class MainCode:
+			...
+			async def run(dbus):
+				async with MainInterface(self, dbus) as intf:
+					# dbus calls are working
+
+	"""
+	def __init__(self, bus, path, interface=None):
+		self.dbus = bus
+		self.path = path
+		super().__init__(reg_name(INTF, interface))
+
+	@asynccontextmanager
+	async def _ctx(self):
+		await self.dbus.export(self.path, self)
+		try:
+			yield self
+		finally:
+			with anyio.move_on_after(2, shield=True):
+				await self.dbus.unexport(self.path, self)
+
+
+
 async def call(p, *a, **k):
-	"""\
-		Call a possibly-null, possibly-async procedure with the given arguments.
-		
-		If the procedure is None, return None.
-		Otherwise if the result is a coroutine, resolve it.
-		Then return the result.
-		"""
+	"""
+	Call a possibly-null, possibly-async callback with the given arguments.
+	
+	If the procedure is None, return None.
+	Otherwise if the result is a coroutine, resolve it.
+	Then return the result.
+	"""
 	if p is None:
 		return None
 	res = p(*a, **k)
