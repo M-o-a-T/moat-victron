@@ -27,6 +27,7 @@ opkg install \
 	python3-venv \
 	python3-modules \
 	python3-dev \
+	coreutils \
 	findutils \
 	psmisc \
 	git \
