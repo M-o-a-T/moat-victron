@@ -80,7 +80,7 @@ class Service:
 		try:
 			return getattr(self, key)
 		except AttributeError:
-			return KeyError(key) from None
+			raise KeyError(key) from None
 
 	def set_seen(self, path):
 		self._seen.add(path)
