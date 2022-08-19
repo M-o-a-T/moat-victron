@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+
+import sys
+import os
+import anyio
+import asyncclick as click
+
+from victron.dbus import Dbus
+from victron.dbus.monitor import DbusMonitor
+from moat.dbus import DbusInterface  # XXX move
+from asyncdbus.service import method
+
+import logging
+logger = logging.getLogger(__name__)
+
+
+@click.command()
+@click.option("--debug", "-d", is_flag=True)
+async def main(debug):
+	# Init logging
+	logging.basicConfig(level=logging.DEBUG if debug else logging.INFO)
+	logger.debug(__file__ + " is starting up")
+
+	# Have a mainloop, so we can send/receive asynchronous calls to and from dbus
+
+	import os
+	import sys
+	sys.path.insert(1, os.path.join(os.path.dirname(__file__), '../../'))
+
+		
+	dummy = {'code': None, 'whenToLog': 'configChange', 'accessLevel': None}
+	monitorlist = {
+		'com.victronenergy.solarcharger': {
+			'/Dc/0/Voltage': dummy,
+			'/Dc/0/Current': dummy,
+			'/Link/ChargeCurrent': dummy,
+			'/Yield/Power': dummy,
+		},
+		'com.victronenergy.battery': {
+			'/Dc/0/Voltage': dummy,
+			'/Dc/0/Current': dummy,
+			'/Info/MaxChargeCurrent': dummy,
+			'/Info/MaxDischargeCurrent': dummy,
+			'/Io/AllowToCharge': dummy,
+			'/Io/AllowToDischarge': dummy,
+		},
+		'com.victronenergy.vebus': {
+			'/Dc/0/Voltage': dummy,
+			'/Dc/0/Current': dummy,
+			'/Ac/ActiveIn/L1/Power': dummy,
+			'/Ac/ActiveIn/L2/Power': dummy,
+			'/Ac/ActiveIn/L3/Power': dummy,
+			'/Hub/ChargeVoltage': dummy,
+			'/Hub4/L1/AcPowerSetpoint': dummy,
+			'/Hub4/L2/AcPowerSetpoint': dummy,
+			'/Hub4/L3/AcPowerSetpoint': dummy,
+		},
+		'com.victronenergy.system': {
+			'/VebusService': dummy,
+			'/Dc/Pv/Current': dummy,
+			'/Dc/Pv/Power': dummy,
+			'/Dc/Battery/Current': dummy,
+			'/Dc/Battery/Power': dummy,
+			'/Dc/Vebus/Current': dummy,
+			'/Dc/Vebus/Power': dummy,
+			'/Ac/ActiveIn/L1/Power': dummy,
+			'/Ac/ActiveIn/L2/Power': dummy,
+			'/Ac/ActiveIn/L3/Power': dummy,
+			'/Ac/Grid/L1/Power': dummy,
+			'/Ac/Grid/L2/Power': dummy,
+			'/Ac/Grid/L3/Power': dummy,
+		},
+	}
+
+	async with DbusMonitor(None, monitorlist, None) as d:
+		# logger.info("==configchange values==")
+		# logger.info(pprint.pformat(d.get_values(['configChange'])))
+
+		# logger.info("==onIntervalAlways and onIntervalOnlyWhenChanged==")
+		# logger.info(pprint.pformat(d.get_values(['onIntervalAlways', 'onIntervalAlwaysAndOnEvent'])))
+
+		while True:
+			await anyio.sleep(1)
+
+			# chargers
+			cur = 0
+			maxcur = 0
+			power = 0
+			nc = 0
+			cvol = 0
+			for chg in d.get_service_list('com.victronenergy.solarcharger'):
+				cvol += d.get_value(chg, '/Dc/0/Voltage')
+				nc += 1
+				cur += d.get_value(chg, '/Dc/0/Current')
+				maxcur += d.get_value(chg, '/Link/ChargeCurrent')
+				power += d.get_value(chg, '/Yield/Power')
+
+			# batteries
+			bvol = 0
+			bcur = 0
+			bmaxc = 0
+			bmaxd = 0
+			okc = True
+			okd = True
+			nb = 0
+			for bat in d.get_service_list('com.victronenergy.battery'):
+				bvol += d.get_value(bat,'/Dc/0/Voltage')
+				nb += 1
+				bcur += d.get_value(bat,'/Dc/0/Current')
+				bmaxc += d.get_value(bat,'/Info/MaxChargeCurrent')
+				bmaxd += d.get_value(bat,'/Info/MaxDischargeCurrent')
+				okc = okc and d.get_value(bat,'/Io/AllowToCharge')
+				okd = okd and d.get_value(bat,'/Io/AllowToDischarge')
+			if bmaxc <= 0.1: okc = False
+			elif not okc: bmaxc = 0
+			if bmaxd <= 0.1: okd = False
+			elif not okd: bmaxd = 0
+
+			vebus = d.get_value('com.victronenergy.system','/VebusService')
+			uv = d.get_value(vebus, '/Dc/0/Voltage')
+			cv = d.get_value(vebus, '/Hub/ChargeVoltage')
+			iv = d.get_value(vebus, '/Dc/0/Current')
+			setp = []
+			curp = []
+			for i in range(3):
+				i += 1
+				setp.append(d.get_value(vebus, f'/Hub4/L{i}/AcPowerSetpoint'))
+				curp.append(d.get_value('com.victronenergy.system', f'/Ac/ActiveIn/L{i}/Power'))
+			try:
+				pp=[f'{a :5.0f}:{b-a :3.0f}' for a,b in zip(setp,curp)]
+			except TypeError:
+				pp=[f'{a}:{b}' for a,b in zip(setp,curp)]
+
+			try:
+				print(f"Sol U={cvol/(nc or 1) :5.2f}/{cv :5.2f} I={cur :6.2f} {maxcur :6.2f} {power :4.0f}  Bat U={bvol/(nb or 1) :5.2f} I={bcur :6.2f} {bmaxc :5.1f} {bmaxd :5.1f}  Inv U={uv :5.2f} I={iv :6.2f} P={' '.join(pp)}")
+			except TypeError:
+				print(f"Sol U={cvol/(nc or 1)} I={cur} {maxcur} {power}  Bat U={bvol/(nb or 1)} I={bcur} {bmaxc} {bmaxd}  Inv U={uv} I={iv} P={' '.join(pp)}")
+
+
+if __name__ == "__main__":
+	main(_anyio_backend="trio")
