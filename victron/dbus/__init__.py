@@ -301,7 +301,7 @@ Importing basics:
 	- If when we power up, save it
 	- When using get_value, know that there is no difference between services (or object paths) that don't
 	  exist and paths that are invalid (= empty array, see above). Both will return None. In case you do
-	  really want to know ifa path exists or not, use the exists property.
+	  really want to know if a path exists or not, use the exists property.
 	- When a D-Bus service leaves the D-Bus, it will first invalidate all its values, and send signals
 	  with that update, and only then leave the D-Bus. (or do we need to subscribe to the NameOwnerChanged-
 	  signal!?!) To be discussed and make sure. Not really urgent, since all existing code that uses this
@@ -328,13 +328,14 @@ class DbusItemImport(object):
 		return instance
 
 	## Constructor
-	# @param bus			the bus-object (SESSION or SYSTEM).
-	# @param serviceName	the dbus-service-name (string), for example 'com.victronenergy.battery.ttyO1'
-	# @param path			the object-path, for example '/Dc/V'
-	# @param eventCallback	function that you want to be called on a value change
-	# @param createSignal   only set this to False if you use this function to one time read a value. When
-	#						leaving it to True, make sure to also subscribe to the NameOwnerChanged signal
-	#						elsewhere. See also note some 15 lines up.
+	# @param bus            the bus-object (SESSION or SYSTEM).
+	# @param serviceName    the dbus-service-name (string), for example 'com.victronenergy.battery.ttyO1'
+	# @param path           the object-path, for example '/Dc/0/V'
+	# @param eventCallback  function that you want to be called on a value change
+	# @param createSignal   only set this to False if you use this function to one-time 
+        #                       read a value. When leaving it to True, make sure to also
+        #                       subscribe to the NameOwnerChanged signal elsewhere.
+        #                       See also note some 15 lines up.
 	def __init__(self, bus, serviceName, path, eventCallback=None, createsignal=True):
 		# TODO: is it necessary to store _serviceName and _path? Isn't it
 		# stored in the bus_getobjectsomewhere?
