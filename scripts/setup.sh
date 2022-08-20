@@ -58,6 +58,7 @@ else
 		# don't update all of them
 		git submodule update --init bus
 		git submodule update --init deframed
+		git submodule update --init serial/twe_meter
 		cd $d/bus
 		git submodule update --init python/lib/serialpacker
 		git submodule update --init python/moat/util
