@@ -216,8 +216,10 @@ fi
 
 cd $ddeb/lib; for f in ld-*.so.* ; do test -e $dvic/lib/$f || ln -s /opt/debian/lib/$f $dvic/lib/ ; done
 
-# enable i2c
 cd $dres/venus
+mkdir -p opt/debian boot/firmware
+
+# enable i2c
 fgrep -xqs i2c_dev etc/modules || echo i2c_dev >> etc/modules
 cd $dfirm
 grep -qs '^dtparam=i2c_arm=on' config.txt || echo dtparam=i2c_arm=on >>config.txt

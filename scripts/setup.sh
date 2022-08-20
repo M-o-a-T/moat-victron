@@ -43,6 +43,8 @@ opkg install \
 	perl-module-time-local \
 
 
+mkdir -p /usr/local/bin
+
 if test -e .git && test -s ./scripts/setup.sh ; then
 	d=$(pwd)
 else
