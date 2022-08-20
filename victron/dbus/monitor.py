@@ -218,7 +218,7 @@ class DbusMonitor(CtxObj):
 			# so we found some new service. Check if we can do something with it.
 			newdeviceadded = await self.scan_dbus_service(name)
 			if newdeviceadded:
-				await call(self.deviceAddedCallback, name, self.get_device_instance(name))
+				await _call(self.deviceAddedCallback, name, self.get_device_instance(name))
 
 		elif name in self.servicesByName:
 			# it disappeared, we need to remove it.
