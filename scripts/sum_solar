@@ -40,6 +40,7 @@ async def main(debug):
 			'/Dc/0/Voltage': dummy,
 			'/Dc/0/Current': dummy,
 			'/Info/MaxChargeCurrent': dummy,
+			'/Info/MaxChargeVoltage': dummy,
 			'/Info/MaxDischargeCurrent': dummy,
 			'/Io/AllowToCharge': dummy,
 			'/Io/AllowToDischarge': dummy,
@@ -92,7 +93,7 @@ async def main(debug):
 				cvol += d.get_value(chg, '/Dc/0/Voltage')
 				nc += 1
 				cur += d.get_value(chg, '/Dc/0/Current')
-				maxcur += d.get_value(chg, '/Link/ChargeCurrent')
+				maxcur += d.get_value(chg, '/Link/ChargeCurrent') or 0
 				power += d.get_value(chg, '/Yield/Power')
 
 			# batteries
@@ -103,12 +104,14 @@ async def main(debug):
 			okc = True
 			okd = True
 			nb = 0
+			cv = 0
 			for bat in d.get_service_list('com.victronenergy.battery'):
 				bvol += d.get_value(bat,'/Dc/0/Voltage')
 				nb += 1
 				bcur += d.get_value(bat,'/Dc/0/Current')
 				bmaxc += d.get_value(bat,'/Info/MaxChargeCurrent')
 				bmaxd += d.get_value(bat,'/Info/MaxDischargeCurrent')
+				cv = d.get_value(bat, '/Info/MaxChargeVoltage') or 0
 				okc = okc and d.get_value(bat,'/Io/AllowToCharge')
 				okd = okd and d.get_value(bat,'/Io/AllowToDischarge')
 			if bmaxc <= 0.1: okc = False
@@ -118,7 +121,6 @@ async def main(debug):
 
 			vebus = d.get_value('com.victronenergy.system','/VebusService')
 			uv = d.get_value(vebus, '/Dc/0/Voltage')
-			cv = d.get_value(vebus, '/Hub/ChargeVoltage')
 			iv = d.get_value(vebus, '/Dc/0/Current')
 			setp = []
 			curp = []
@@ -132,9 +134,10 @@ async def main(debug):
 				pp=[f'{a}:{b}' for a,b in zip(setp,curp)]
 
 			try:
-				print(f"Sol U={cvol/(nc or 1) :5.2f}/{cv :5.2f} I={cur :6.2f} {maxcur :6.2f} {power :4.0f}  Bat U={bvol/(nb or 1) :5.2f} I={bcur :6.2f} {bmaxc :5.1f} {bmaxd :5.1f}  Inv U={uv :5.2f} I={iv :6.2f} P={' '.join(pp)}")
+				cvol /= (nc or 1)
+				print(f"Sol U={cvol :5.2f}/{(cv-cvol)*1000 :4.0f} I={cur :6.2f} {maxcur :6.2f} {power :4.0f}  Bat U={bvol/(nb or 1) :5.2f} I={bcur :6.2f} {bmaxc :5.1f} {bmaxd :5.1f}  Inv U={uv :5.2f} I={iv :6.2f} P={' '.join(pp)}")
 			except TypeError:
-				print(f"Sol U={cvol/(nc or 1)} I={cur} {maxcur} {power}  Bat U={bvol/(nb or 1)} I={bcur} {bmaxc} {bmaxd}  Inv U={uv} I={iv} P={' '.join(pp)}")
+				print(f"Sol U={cvol} I={cur} {maxcur} {power}  Bat U={bvol/(nb or 1)} I={bcur} {bmaxc} {bmaxd}  Inv U={uv} I={iv} P={' '.join(pp)}")
 
 
 if __name__ == "__main__":
