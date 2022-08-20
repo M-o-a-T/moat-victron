@@ -93,4 +93,5 @@ env/bin/pip3 install -r requirements.txt
 env/bin/pip3 install --upgrade pip
 
 ./scripts/webstuff-dl $d
-exec ./scripts/setup2.sh $d
+./scripts/setup2.sh $d
+./scripts/setupdeb.sh
