@@ -1,11 +1,12 @@
 #!/bin/bash
 
-if test -z "$1" ; then
-	d="$(cd "$(dirname $0)"; pwd)"
+if test $# -eq 0 ; then
+	d=.
 else
 	d="$1"
 fi
 cd $d
+d=$(pwd)
 
 cp vimrc $HOME/.vimrc
 sed -e "s#:DIR:#$d#" < profile.sh > $HOME/.profile
