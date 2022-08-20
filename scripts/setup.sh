@@ -55,11 +55,17 @@ else
 	else
 		git clone https://github.com/M-o-a-T/moat-victron.git $d
 		cd $d
+		# don't update all of them
 		git submodule update --init bus
 		git submodule update --init deframed
 		cd $d/bus
 		git submodule update --init python/lib/serialpacker
 		git submodule update --init python/moat/util
+		git submodule update --init python/lib/micropython
+		git submodule update --init python/lib/micropython-lib
+		cd python/lib/micropython/mpy-cross
+		make
+		cp mpy-cross /usr/local/bin/
 		cd $d/deframed
 		git submodule update --init deframed/util
 		cd $d
