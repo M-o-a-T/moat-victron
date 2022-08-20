@@ -33,7 +33,7 @@ advantages:
 ## Modules
 
 The modules `victron.dbus` and `victron.dbus.monitor` are suitably modified,
-if not rewritten, copies of `
+if not rewritten, copies of `/opt/victronenergy/dbus-systemcalc-py/ext/velib-python`.
 
 ## Random stuff
 
