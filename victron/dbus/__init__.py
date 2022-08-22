@@ -596,7 +596,7 @@ class DbusItemExport(dbus.ServiceInterface):
 
 		# call the callback given to us, and check if new value is OK.
 		# The callback needs to explicitly return False to reject a change.
-		res = await call(self._onchangecallback,self.__dbus_object_path__, newvalue)
+		res = await call(self._onchangecallback,self._path, newvalue)
 		if res is not None and not res:
 			return 2
 		await self.set_value(newvalue)
