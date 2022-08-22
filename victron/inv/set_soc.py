@@ -9,6 +9,16 @@ class InvMode_SetSOC(InvModeBase):
 
 	dest_soc = 90
 
+	_doc = dict(
+		dest_soc="The SoC level to aim towards",
+		_l="""\
+This module tries to charge/discharge the battery towards a given
+state of charge (SoC) percentage.
+
+Untested.
+""",
+	)
+
 	async def run(self, task_status):
 		intf = self.intf
 		eq = 0
