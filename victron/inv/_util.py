@@ -1,19 +1,17 @@
-def balance(a):
+def balance(a, min=None, max=None):
 	"""
-	Takes an array. If there are positive and negative values in it, subtract the
-	lower sum from the higher part so that the delta stays the same if possible.
+	Takes an array. If there are positive *and* negative values in it, add the
+	negative to the positive values so that the deltas between values are constant.
 
-	>>> assert balance(f(50, 10, 100)) == (50, 10, 100)
-	>>> assert balance(f(50, -10, 100)) == [45.0, 0, 95.0]
-	>>> assert balance(f(-50, -10, 100)) == [0, 0, 40.0]
-	>>> assert balance(f(50, -10, -100)) == [0, 0, -60.0]
-	>>> assert balance(f(-50, -10, -100)) == (-50, -10, -100)
+	Then, if some values exceed the min or max, cap it and distribute the delta.
 
+	See `test/test_balance` for examples.
 	"""
+	if not a:
+		return a
+
 	sl=sum(-x for x in a if x<0)
 	sh=sum(x for x in a if x>0)
-	if sl==0 or sh==0:
-		return a
 
 	rev = sl>sh
 	if rev:
@@ -25,26 +23,49 @@ def balance(a):
 	# sort
 	a = sorted(enumerate(a), key=lambda x:-x[1])
 
-	# drop the negatives
-	ra = []
-	while a:
-		i,v = a.pop()
-		if v<=0:
-			ra.append((i,0))
-			continue
-		rd = d/(len(a)+1)
-		if rd >= v:
-			d -= v
-			ra.append((i,0))
-			continue
-		v -= rd
-		ra.append((i,v))
-
-	ra.sort(key=lambda x:x[0])
-	if rev:
-		return [-v for i,v in ra]
+	# drop the negatives, if there are any
+	if a[-1][1] >= 0:
+		ra = a
+		ra.reverse()
 	else:
-		return [v for i,v in ra]
+		ra = []
+		while a:
+			i,v = a.pop()
+			if v<=0:
+				ra.append((i,0))
+				continue
+			rd = d/(len(a)+1)
+			if rd >= v:
+				d -= v
+				ra.append((i,0))
+				continue
+			ra.append((i,v-rd))
+			d -= rd
+
+	m = min if rev else max
+	if m is None:
+		a=ra
+	else:
+		if not isinstance(m, (tuple,list)):
+			m = [m]*len(ra)
+		a=[]
+		d = 0
+		while ra:
+			i,v = ra.pop()
+			rd = d/(len(ra)+1)
+			mi = -m[i] if rev else m[i]
+			if v+rd>mi:
+				d += v-mi
+				a.append((i,mi))
+				continue
+			a.append((i,v+rd))
+			d -= rd
+
+	a.sort(key=lambda x:x[0])
+	if rev:
+		return [-v for i,v in a]
+	else:
+		return [v for i,v in a]
 
 
 class async_init:
