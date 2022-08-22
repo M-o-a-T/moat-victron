@@ -356,7 +356,10 @@ class DbusItemImport(object):
 		self._interface = await self._proxy.get_interface(BUSITEM_INTF)
 
 		if self._createsignal:
-			await self._interface.on_properties_changed(self._properties_changed_handler)
+			try:
+				await self._interface.on_properties_changed(self._properties_changed_handler)
+			except AttributeError:
+				pass
 			self._match = True
 			try:
 				r = self._roots[self._serviceName]
