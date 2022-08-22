@@ -648,9 +648,8 @@ class InvMode_None(InvModeBase):
 		intf = self.intf
 
 		logger.info("SET inverter ZERO")
-		if False:
-			for p in intf.p_set_:
-				await p.set_value(0)
+		for p in intf.p_set_:
+			await p.set_value(0)
 		task_status.started()
 		while True:
 			await anyio.sleep(99999)
@@ -664,9 +663,8 @@ class InvMode_Idle(InvModeBase):
 
 		logger.info("SET inverter IDLE")
 		while True:
-			if False:
-				for p in intf.p_set_:
-					await p.set_value(0)
+			for p in intf.p_set_:
+				await p.set_value(0)
 			if task_status is not None:
 				task_status.started()
 				task_status = None
