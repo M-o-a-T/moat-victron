@@ -208,7 +208,7 @@ class DbusService(object):
 		return self._dbusobjects[path].local_get_value()
 
 	async def setitem(self, path, newvalue):
-		await self._dbusobjects[path].local_set_value(newvalue)
+		await self._dbusobjects[path].set_value(newvalue)
 
 	async def delitem(self, path):
 		await self._dbusobjects[path].close()  # Invalidates and then removes the object path
@@ -233,7 +233,7 @@ class ServiceContext(object):
 		self.changes = {}
 
 	async def set(self, var, newvalue):
-		c = await var._local_set_value(newvalue)
+		c = await var._set_value(newvalue)
 		if c is not None:
 			self.changes[var._path] = c
 
@@ -545,7 +545,7 @@ class DbusItemExport(dbus.ServiceInterface):
 	async def close(self):
 		await self._bus.unexport(self._path, self)
 		await call(self._deletecallback, path)
-		await self.local_set_value(None)
+		await self.set_value(None)
 		self.remove_from_connection()
 		logging.debug("DbusItemExport %s has been removed", path)
 
@@ -553,12 +553,12 @@ class DbusItemExport(dbus.ServiceInterface):
 	# will be emitted to the dbus. This function is to be used in the python code that
 	# is using this class to export values to the dbus.
 	# set value to None to indicate that it is Invalid
-	async def local_set_value(self, newvalue):
-		changes = await self._local_set_value(newvalue)
+	async def set_value(self, newvalue):
+		changes = await self._set_value(newvalue)
 		if changes is not None:
 			res = await self.PropertiesChanged(changes)
 
-	async def _local_set_value(self, newvalue):
+	async def _set_value(self, newvalue):
 		if self._value == newvalue:
 			return None
 
@@ -568,7 +568,7 @@ class DbusItemExport(dbus.ServiceInterface):
 			'Text': wrap_dbus_value(await self.get_text()),
 		}
 
-	def local_get_value(self):
+	def get_value(self):
 		return self._value
 
 	@property
@@ -596,7 +596,7 @@ class DbusItemExport(dbus.ServiceInterface):
 		res = await call(self._onchangecallback,self.__dbus_object_path__, newvalue)
 		if res is not None and not res:
 			return 2
-		await self.local_set_value(newvalue)
+		await self.set_value(newvalue)
 		return 0  # OK
 
 	## Dbus exported method GetDescription
