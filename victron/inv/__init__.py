@@ -96,6 +96,7 @@ class InvControl(BusVars):
 	high_delta = 0.3  # min difference between current voltage and whatever the battery says is OK
 	_top_off = False  # go to the battery voltage limit?
 	top_delta = 0.5  # distance to max voltage when not topping off
+	bottom_delta = 1.0  # distance to min voltage
 
 	pg_min = -10000  # watt we may send to the grid
 	pg_max = 10000  # watt we may take from the grid
@@ -349,7 +350,7 @@ class InvControl(BusVars):
 	@classmethod
 	def _mode_name(cls, path, value):
 		try:
-			return cls.MODE[value][0]
+			return cls.MODE[value]._name
 		except KeyError:
 			return f'?_{v}'
 
@@ -443,13 +444,11 @@ class InvControl(BusVars):
 		"""
 		logger.debug("WANT inv P: %f", p)
 		op = p
-		inv_i = self.i_from_p(p, rev=True)
 
 		# if we're close to the top, slow down / stop early
 		if not self._top_off:
-			# current we'd usually pull with given P
-
-			# This varies min battery current from +C/20 to -C/20 depending on how close we are to the top
+			inv_i = self.i_from_p(p, rev=True)
+			# This varies min battery current from +C/20 at the top to zero at top-top_delta
 			i_dis = self.b_cap/20 * ((self.top_delta-(self.u_max.value-self.u_dc)) / self.top_delta)
 			i_max = -min(self.ib_max, i_dis+self.i_pv)
 
@@ -459,6 +458,17 @@ class InvControl(BusVars):
 
 		# The grid may impose power limits
 		p = max(self.pg_min, min(p, self.pg_max))
+
+		# if we're close to the bottom, speed up / charge.
+		if True:
+			inv_i = self.i_from_p(p, rev=True)
+			# This varies max battery current from -C/20 at the bottom to zero at bottom+bottom_delta
+			i_chg = -self.b_cap/20 * ((self.bottom_delta-(self.u_dc-self.u_min.value)) / self.bottom_delta)
+			i_min = -max(self.ib_min, i_chg+self.i_pv)
+
+			# if we're trying to feed less to the battery than required, push more
+			if inv_i < i_min:
+				p = self.p_from_i(i_min)
 
 		# Check against max charge/discharge.
 		# For discharging, consider the min PV value when clouds obscure the sun.
