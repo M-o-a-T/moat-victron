@@ -536,7 +536,7 @@ class InvModeBase:
 		if intf.n_phase > 1:
 			pd_min = 0
 			pd_max = 0
-			print("START",ps)
+			logger.debug("START %s",ps)
 			for i in range(intf.n_phase):
 				p = ps[i]
 				p_set = intf.p_set_[i].value
@@ -545,7 +545,7 @@ class InvModeBase:
 				p_cons = -intf.p_cons_[i].value
 				p_min = self.ps_min[i]
 				p_max = self.ps_max[i]
-				print(p_set,p_cur,p_run,p_cons,p_min,p_max)
+				logger.debug("%.0f %.0f %.0f %.0f %.0f %.0f", p_set,p_cur,p_run,p_cons,p_min,p_max)
 
 				if p_set < 0 and p_run < 0:
 					if p_set < p_run-20:
@@ -578,7 +578,7 @@ class InvModeBase:
 			pa = [(i,x) for i,x in enumerate(ps)]
 			if pd_min > 0:
 				pa.sort(key=lambda x: -ps[x[0]] + self.ps_min[x[0]])
-				print(pa)
+				logger.debug("MIN Pre %s", pa)
 				pb = []
 				d = 0
 				while pa:
@@ -602,7 +602,7 @@ class InvModeBase:
 			if pd_max > 0:
 				breakpoint()
 				pa.sort(key=lambda x: ps[x[0]] - self.ps_max[x[0]])
-				print(pa)
+				logger.debug("MAX Pre %s", pa)
 				pb = []
 				d = 0
 				while pa:
@@ -623,7 +623,7 @@ class InvModeBase:
 				pa = pb
 				breakpoint()
 			ps = [ x[1] for x in sorted(pa, key=lambda x:x[0]) ]
-			print("END",ps)
+			logger.debug("END %s",ps)
 
 		await intf.set_inv_ps(ps)
 
@@ -633,7 +633,7 @@ class InvModeBase:
 		while n<10:
 			await intf.trigger()
 			pp = intf.p_inv
-			print("now", pp)
+			logger.debug("now %s", pp)
 			if abs(pp-p) < 50:
 				break
 			p=pp
@@ -683,7 +683,7 @@ class InvMode_GridPower(InvModeBase):
 		d = self.feed_in
 		while True:
 			grid = intf.p_grid
-			print("old",d)
+			logger.debug("old %s",d)
 			# d += (grid-self.feed_in)/3
 			# print("new",d)
 			ps = intf.calc_grid_p(d, excess=self.excess)
