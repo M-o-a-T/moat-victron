@@ -48,9 +48,9 @@ async def main(debug):
 		'com.victronenergy.vebus': {
 			'/Dc/0/Voltage': dummy,
 			'/Dc/0/Current': dummy,
-			'/Ac/ActiveIn/L1/Power': dummy,
-			'/Ac/ActiveIn/L2/Power': dummy,
-			'/Ac/ActiveIn/L3/Power': dummy,
+			'/Ac/ActiveIn/L1/P': dummy,
+			'/Ac/ActiveIn/L2/P': dummy,
+			'/Ac/ActiveIn/L3/P': dummy,
 			'/Hub/ChargeVoltage': dummy,
 			'/Hub4/L1/AcPowerSetpoint': dummy,
 			'/Hub4/L2/AcPowerSetpoint': dummy,
@@ -124,20 +124,22 @@ async def main(debug):
 			iv = d.get_value(vebus, '/Dc/0/Current')
 			setp = []
 			curp = []
+			runp = []
 			for i in range(3):
 				i += 1
 				setp.append(d.get_value(vebus, f'/Hub4/L{i}/AcPowerSetpoint'))
 				curp.append(d.get_value('com.victronenergy.system', f'/Ac/ActiveIn/L{i}/Power'))
+				runp.append(d.get_value(vebus, f'/Ac/ActiveIn/L{i}/P'))
 			try:
-				pp=[f'{a :5.0f}:{b-a :3.0f}' for a,b in zip(setp,curp)]
+				pp=[f'{a :5.0f}:{a-c :3.0f}/{b-c :3.0f}' for a,b,c in zip(setp,curp,runp)]
 			except TypeError:
-				pp=[f'{a}:{b}' for a,b in zip(setp,curp)]
+				pp=[f'{a}:{b}/{c}' for a,b,c in zip(setp,curp,runp)]
 
 			try:
 				cvol /= (nc or 1)
-				print(f"Sol U={cvol :5.2f}/{(cv-cvol)*1000 :4.0f} I={cur :6.2f} {maxcur :6.2f} {power :4.0f}  Bat U={bvol/(nb or 1) :5.2f} I={bcur :6.2f} {bmaxc :5.1f} {bmaxd :5.1f}  Inv U={uv :5.2f} I={iv :6.2f} P={' '.join(pp)}")
+				print(f"U={cvol :5.2f} Sol {(cv-cvol)*1000 :4.0f} I={cur :6.2f} {maxcur :6.2f} Bat I={bcur :6.2f} {bmaxc :5.1f} {bmaxd :5.1f}  Inv I={iv :6.2f} P={' '.join(pp)}")
 			except TypeError:
-				print(f"Sol U={cvol} I={cur} {maxcur} {power}  Bat U={bvol/(nb or 1)} I={bcur} {bmaxc} {bmaxd}  Inv U={uv} I={iv} P={' '.join(pp)}")
+				print(f"U={cvol} Sol I={cur} {maxcur} {power}  Bat I={bcur} {bmaxc} {bmaxd}  Inv I={iv} P={' '.join(pp)}")
 
 
 if __name__ == "__main__":
