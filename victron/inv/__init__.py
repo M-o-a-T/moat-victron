@@ -125,11 +125,11 @@ class InvControl(BusVars):
 
 	MODE = {}
 	@classmethod
-	def register(cls,num,name):
-		def _reg(proc):
-			cls.MODE[num] = (name, proc)
-			return proc
-		return _reg
+	def register(cls, target):
+		if target._mode in cls.MODE:
+			raise RuntimeError(f"Mode {target._mode} already known: {cls.MODE[target._mode]}")
+		cls.MODE[target._mode] = target
+		return target
 
 	VARS = {
 		'com.victronenergy.system': dict(
@@ -336,7 +336,9 @@ class InvControl(BusVars):
 			raise RuntimeError("cannot run two tasks")
 		try:
 			with anyio.CancelScope() as self._mode_task:
-				await self.MODE[self._mode][1](self).run(task_status)
+				m = self.MODE[self._mode]
+				cfg = self.cfg.get(m._name, {})
+				await m(self, cfg).run(task_status)
 		finally:
 			self._mode_task = None
 			self._mode_task_stopped.set()
@@ -510,8 +512,9 @@ class InvControl(BusVars):
 
 
 class InvModeBase:
-	def __init__(self, intf):
+	def __init__(self, intf, cfg):
 		self.intf = intf
+		self.cfg = cfg
 		self.ps = None
 		self.ps_min = [-999999999] * intf.n_phase
 		self.ps_max = [999999999] * intf.n_phase
@@ -642,74 +645,27 @@ class InvModeBase:
 			n += 1
 		self.running = True
 
-@InvControl.register(0,"off")
-class InvMode_None(InvModeBase):
-	"Set the AC output to zero, then do nothing."
-	async def run(self, task_status):
-		intf = self.intf
 
-		logger.info("SET inverter ZERO")
-		for p in intf.p_set_:
-			await p.set_value(0)
-		task_status.started()
-		while True:
-			await anyio.sleep(99999)
+#from ._utils import _loader
+def _loader(path, cls, reg):
+	from pathlib import Path
+	from importlib import import_module
 
+	def _imp(name):
+		m = import_module("."+name, package=_loader.__module__)
+		for n in m.__all__:
+			c = getattr(m,n)
+			if isinstance(c,type) and issubclass(c,cls) and hasattr(c,'_mode'):
+				reg(c)
 
-@InvControl.register(1,"idle")
-class InvMode_Idle(InvModeBase):
-	"Continuously set AC output to zero."
-	async def run(self, task_status):
-		intf = self.intf
+	path = Path(__path__[0])
+	for filename in path.glob("*"):
+		if filename.name[0] in "._":
+			continue
+		if filename.name.endswith(".py"):
+			_imp(filename.name[:-3])
+		elif (path / filename / "__init__.py").is_file():
+			_imp(filename.name)
 
-		logger.info("SET inverter IDLE")
-		while True:
-			for p in intf.p_set_:
-				await p.set_value(0)
-			if task_status is not None:
-				task_status.started()
-				task_status = None
-			await anyio.sleep(20)
-
-
-@InvControl.register(2,"GridSetpoint")
-class InvMode_GridPower(InvModeBase):
-	"""Set total power from/to the external grid."""
-
-	feed_in = -30
-	excess = None
-
-	async def run(self, task_status):
-		intf = self.intf
-		while True:
-			ps = intf.calc_grid_p(self.feed_in, excess=self.excess)
-			await self.set_inv_ps(ps)
-
-			if task_status is not None:
-				task_status.started()
-				task_status = None
-
-
-
-@InvControl.register(3,"SetSOC")
-class InvMode_SetSOC(InvModeBase):
-	"""Reach a given charge level."""
-	dest_soc = 90
-
-	async def run(self, task_status):
-		intf = self.intf
-		eq = 0
-		while True:
-			soc = await intf.batt_soc
-			if self.dest_soc < soc:
-				await intf.set_batt_i(intf.ib_min * (soc-self.dest_soc) /3)
-			elif self.dest_soc > soc:
-				await intf.set_batt_i(intf.ib_max * (self.dest_soc-soc) /3)
-			else:
-				await intf.set_batt_i(0)
-
-			if task_status is not None:
-				task_status.started()
-				task_status = None
-			await intf.trigger()
-
+_loader(__path__[0], InvModeBase, InvControl.register)
+del _loader

@@ -19,10 +19,8 @@ Modes:
 
 \b
 """
-for _i,_v in InvControl.MODE.items():
-	_n,_p = _v
-
-	_modes += f"{_i :2d} {_n :<10s} {_p.__doc__}\n"
+for _i,_c in InvControl.MODE.items():
+	_modes += f"{_c._mode :2d} {_c._name :<10s} {_c.__doc__}\n"
 
 @click.command(epilog=_modes)
 @click.option("--debug", "-d", is_flag=True)
