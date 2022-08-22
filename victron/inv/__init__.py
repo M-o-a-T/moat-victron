@@ -514,6 +514,7 @@ class InvModeBase:
 		self.ps = None
 		self.ps_min = [-999999999] * intf.n_phase
 		self.ps_max = [999999999] * intf.n_phase
+		self.running = False
 
 	# p_set_
 	#   the power we want this Multi to get/emit. Negative.
@@ -533,7 +534,7 @@ class InvModeBase:
 		# Yes this may result in one grid phase going in while others
 		# go out, but that could already happen anyway and should not
 		# materially increase grid load differences across phases.
-		if intf.n_phase > 1:
+		if not self.running and intf.n_phase > 1:
 			pd_min = 0
 			pd_max = 0
 			logger.debug("START %s",ps)
@@ -638,7 +639,7 @@ class InvModeBase:
 				break
 			p=pp
 			n += 1
-		# 
+		self.running = True
 
 @InvControl.register(0,"off")
 class InvMode_None(InvModeBase):
