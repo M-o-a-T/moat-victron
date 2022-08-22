@@ -462,6 +462,7 @@ class InvControl(BusVars):
 		# For discharging, consider the min PV value when clouds obscure the sun.
 		i_pv = min(self.i_pv_max * self.pv_margin, self.i_pv)
 		i_inv = self.i_from_p(p, rev=True)
+                # could use i_batt_avg instead
 		i_batt = -i_inv - i_pv
 		if i_batt < self.ib_min:
 			# charge
@@ -677,16 +678,13 @@ class InvMode_GridPower(InvModeBase):
 
 	feed_in = 0
 	excess = None
+
 	async def run(self, task_status):
 		intf = self.intf
-		d = self.feed_in
 		while True:
-			grid = intf.p_grid
-			logger.debug("old %s",d)
-			# d += (grid-self.feed_in)/3
-			# print("new",d)
-			ps = intf.calc_grid_p(d, excess=self.excess)
+			ps = intf.calc_grid_p(self.feed_in, excess=self.excess)
 			await self.set_inv_ps(ps)
+
 			if task_status is not None:
 				task_status.started()
 				task_status = None
