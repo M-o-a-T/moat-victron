@@ -676,7 +676,7 @@ class InvMode_Idle(InvModeBase):
 class InvMode_GridPower(InvModeBase):
 	"""Set total power from/to the external grid."""
 
-	feed_in = 0
+	feed_in = -30
 	excess = None
 
 	async def run(self, task_status):
