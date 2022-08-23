@@ -73,3 +73,70 @@ This script can be used to run any other Debian program; just copy or link it.
 Note that calling from Debian back into Venus requires clearing the environment
 variables that are set in this script.
 
+### install the LiFePo4wered daemon
+
+`git clone http://git.extern.smurf.noris.de/lifepo4wered.git/ ~/lifepo4`
+`cd ~/lifepo4`
+`make USE_SYSTEMD=0 PREFIX=/usr BUS=1 user-install`
+
+Now shut down the Raspberry Pi, install the LiFePo4wered hat, remove the Pi's
+power supply, and hold the hat's button until it powers on. The greed LED should
+stop flashing eventually.
+
+### setup the MoaT BMS
+
+Change to `bus/python`. Copy `config/bms.cfg` and adapt to your battery, cells, etc..
+
+Run `scripts/mpy-moat -vc CONFIG setup -C /usr/local/bin/mpy-cross -S once -s micro -c CONFIG` to
+
+* copy the code to the RP2040
+* tell it to run it once, i.e. it'll return to the input prompt after an error
+
+Run `scripts/mpy-moat -vc CONFIG mplex -d`.
+
+This command mostly ignores the input configuration file; the real configuration is stored
+on the RP2040.
+
+The first thing this does is to send an "Identify" command to all BMS modules, so the blue
+LEDs should all light up and stay on for a bit. If they don't:
+
+* check your wiring
+* did you re-flash them?
+
+If the chain ends somewhere, check for a loose cable or a mis-programmed controller.
+
+### Calibrate the BMS
+
+First, measure the battery voltage and set the controller's overall voltage to it:
+
+`dbus -y com.victronenergy.battery.batt /bms/0 SetVoltage %25.67`
+
+Next, measure each cell's voltage, to calibrate the meters in the cells' controllers.
+
+`dbus -y com.victronenergy.battery.batt /bms/0/x Identify`
+`dbus -y com.victronenergy.battery.batt /bms/0/x SetVoltage %3.214`
+
+Repeat for X from zero to the number of cells minus one.
+
+`dbus -y com.victronenergy.battery.batt /bms/0 GetVoltages`
+
+Compare the "bms" and "cells" values. Hopefully they're reasonably identical.
+
+Next you can turn on the relay so the Victron devices see your battery:
+
+`dbus -y com.victronenergy.battery.batt /bms/0 ForceRelay %True`
+
+Now, the solar charger should wake up. Configure it (Bluetooth, VE Direct, VE Bus, …).
+Then connet it to your Venus Pi.
+
+Check the Victron GUI what the solar charger thinks the voltage is, and set that:
+`
+`dbus -y com.victronenergy.battery.batt /bms/0 SetExternalVoltage %26.37`
+
+### Set up the Multiplus(es)
+
+You need to enable the ESS assistant. How to do that is documented elsewhere.
+
+### Tell the system what to do
+
+TBD
