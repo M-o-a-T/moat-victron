@@ -142,7 +142,7 @@ async def main(debug):
 
 			try:
 				cvol /= (nc or 1)
-				print(f"U={cvol :5.2f} Sol {(cv-cvol)*1000 :4.0f} I={cur :6.2f} {maxcur :6.2f} Bat I={bcur :6.2f} {bmaxc :5.1f} {bmaxd :5.1f}  Inv I={iv :6.2f} P={' '.join(pp)}")
+				print(f"U={cvol :5.2f}  Sol {(cv-cvol)*1000 :4.0f}W {cur :6.2f}A <{maxcur :3.0f}  Bat {bcur :6.2f}A >{-bmaxd :5.1f}<{bmaxc :5.1f}  Inv {iv :6.2f}A {' '.join(pp)}")
 			except TypeError:
 				print(f"U={cvol} Sol I={cur} {maxcur} {power}  Bat I={bcur} {bmaxc} {bmaxd}  Inv I={iv} P={' '.join(pp)}")
 
