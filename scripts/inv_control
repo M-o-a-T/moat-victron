@@ -8,7 +8,7 @@ import asyncclick as click
 from victron.dbus import Dbus
 from victron.dbus.monitor import DbusMonitor
 from victron.inv import InvControl
-from moat.dbus import DbusInterface  # XXX move
+from victron.dbus.utils import DbusInterface  # XXX move
 from asyncdbus.message_bus import MessageBus, BusType
 
 import logging
