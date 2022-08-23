@@ -3,11 +3,21 @@
 This repository attempts to establish a modern framework for talking to
 Victron Energy products, mainly via Dbus.
 
+Also included:
+
+* a modular program to control the charger/inverter.
+
+* a status monitor that emits a single line with the salient facts, every second.
+
+* a couple of patches that this author thinks are particularly helpful.
+
+* Integration with 
+
 ## Rationale
 
 The original Victron code uses synchronous Python and manages its
 tasks et al. with GLib. Its documentation warns in multiple places
-that GLib likes to swallow errors and might leaves the system in an
+that GLib likes to swallow errors and might leave the system in an
 inconsistent state; it even includes a helper that, on error, directly
 kills the program, circumventing the SystemExit exception Python
 normally uses for this.
