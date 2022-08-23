@@ -444,7 +444,7 @@ class InvControl(BusVars):
 		logger.debug("WANT inv P: %.0f", p)
 		op = p
 
-		# if we're close to the top, slow down / stop early
+		# if we're close to the max voltage, slow down / stop early
 		if not self._top_off:
 			inv_i = self.i_from_p(p, rev=True)
 			# This varies min battery current from +C/20 at the top to zero at top-umax_diff
@@ -459,7 +459,7 @@ class InvControl(BusVars):
 		# The grid may impose power limits
 		p = max(self.pg_min, min(p, self.pg_max))
 
-		# if we're close to the bottom, speed up / charge.
+		# if we're close to the min voltage, speed up / charge.
 		if True:
 			inv_i = self.i_from_p(p, rev=True)
 			# This varies max battery current from -C/20 at the bottom to zero at bottom+umin_diff
@@ -471,11 +471,11 @@ class InvControl(BusVars):
 				p = self.p_from_i(i_min)
 				logger.debug("U_MIN: P %.0f, I %.1f < %.1f", p,inv_i,i_min)
 
-		# Check against max charge/discharge.
+		# Check against max charge/discharge current.
 		# For discharging, consider the min PV value when clouds obscure the sun.
 		i_pv = min(self.i_pv_max * self.pv_margin, self.i_pv)
 		i_inv = self.i_from_p(p, rev=True)
-                # could use i_batt_avg instead
+		# could use i_batt_avg instead
 		i_batt = -i_inv - i_pv
 		if i_batt < self.ib_min:
 			# charge
@@ -500,8 +500,6 @@ class InvControl(BusVars):
 
 		ps = [ -p/self.n_phase - (g-load_avg) for g in self.load ]
 		ps = balance(ps, min=-self.p_per_phase, max=self.p_per_phase)
-		# TODO consider operational limits of the inverters:
-		# the result may be too large for us to handle
 		return ps
 
 
