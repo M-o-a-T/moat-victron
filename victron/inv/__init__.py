@@ -600,7 +600,7 @@ class InvModeBase:
 				#
 				# We add a fudge of 50W so that we can discover (in the next
 				# round's first pass) whether the limit has been lifted.
-				# This is too high for small batteries, but if you really
+				# 50W is too high for small batteries, but if you really
 				# do run a multiphase system on a 12V 20A battery, you're
 				# going to have worse problems than this. :-P
 				pa.sort(key=lambda x: -ps[x[0]] + self.ps_min[x[0]])
@@ -616,7 +616,7 @@ class InvModeBase:
 						v = p_min-50
 					else:
 						pp = d_min/(len(pa)+1)
-						if v-pp < p_min: # goes to min
+						if v-pp < p_min: # limited by min
 							d_min -= v-p_min
 							v = p_min-50
 						else: # can use pp
@@ -626,6 +626,8 @@ class InvModeBase:
 				pa = pb
 
 			if pd_max > 0:
+				# same as above for taking power from the grid.
+				# Not yet tested because it's summer.
 				breakpoint()
 				pa.sort(key=lambda x: ps[x[0]] - self.ps_max[x[0]])
 				logger.debug("MAX Pre %s", pa)
@@ -639,7 +641,7 @@ class InvModeBase:
 						v = p_max+50
 					else:
 						pp = d_max/(len(pa)+1)
-						if v+pp > p_max: # goes to max
+						if v+pp > p_max: # limited by max
 							d_max -= p_max-v
 							v = p_max+50
 						else: # can use pp
