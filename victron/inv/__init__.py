@@ -549,9 +549,11 @@ class InvModeBase:
 		# go out, but that could already happen anyway and should not
 		# materially increase grid load differences across phases.
 		if self.running and intf.n_phase > 1:
-			pd_min = 0
-			pd_max = 0
-			logger.debug("START %s",ps)
+			pd_min = pd_max = 0
+			d_min = d_max = 0
+			ops = ps
+
+			# First pass: determine the invertes' current operational limits.
 			for i in range(intf.n_phase):
 				p = ps[i]
 				p_set = intf.p_set_[i].value
@@ -589,39 +591,46 @@ class InvModeBase:
 					elif p>0 and p>p_max-50:
 						pd_max += p_max-p+50
 
-			# Second pass. Distribute pd_min/pd_max to lower-powered phases.
+			# Second pass. Distribute difference to lower-powered phases.
 			pa = [(i,x) for i,x in enumerate(ps)]
 			if pd_min > 0:
+				# We sort by "worst-hit device last". Going through the
+				# list from the end, the delta is accumulated in d_min and
+				# then distributed to the remaining devices, if any.
+				#
+				# We add a fudge of 50W so that we can discover (in the next
+				# round's first pass) whether the limit has been lifted.
+				# This is too high for small batteries, but if you really
+				# do run a multiphase system on a 12V 20A battery, you're
+				# going to have worse problems than this. :-P
 				pa.sort(key=lambda x: -ps[x[0]] + self.ps_min[x[0]])
 				logger.debug("MIN Pre %s", pa)
 				pb = []
-				d = 0
+				d_min = 0
 				while pa:
 					i,v = pa.pop()
 					p_run = intf.p_run_[i].value
 					p_min = self.ps_min[i]
 					if v < p_min:  # over the limit
-						d += p_min-v
+						d_min += p_min-v
 						v = p_min-50
 					else:
-						pp = d/(len(pa)+1)
+						pp = d_min/(len(pa)+1)
 						if v-pp < p_min: # goes to min
-							d -= v-p_min
+							d_min -= v-p_min
 							v = p_min-50
 						else: # can use pp
-							d -= pp+50
+							d_min -= pp+50
 							v -= pp+50
 					pb.append((i,v))
 				pa = pb
-				if d > 0:
-					logger.debug("PD_MIN: P %.0f, want %.0f", sum(x[1] for x in pa), d)
 
 			if pd_max > 0:
 				breakpoint()
 				pa.sort(key=lambda x: ps[x[0]] - self.ps_max[x[0]])
 				logger.debug("MAX Pre %s", pa)
 				pb = []
-				d = 0
+				d_max = 0
 				while pa:
 					i,v = pa.pop()
 					p_run = intf.p_run_[i].value
@@ -629,19 +638,24 @@ class InvModeBase:
 					if v > p_max:  # over the limit
 						v = p_max+50
 					else:
-						pp = d/(len(pa)+1)
+						pp = d_max/(len(pa)+1)
 						if v+pp > p_max: # goes to max
-							d -= p_max-v
+							d_max -= p_max-v
 							v = p_max+50
 						else: # can use pp
-							d -= pp+50
+							d_max -= pp+50
 							v += pp+50
 					pb.append((i,v))
 				pa = pb
-				if d > 0:
-					logger.debug("PD_MAX: P %.0f, want %.0f", sum(x[1] for x in pa), d)
 			ps = [ x[1] for x in sorted(pa, key=lambda x:x[0]) ]
-			logger.debug("END %s",ps)
+
+			if ops != ps and (d_min > 0 or d_max > 0):
+				# logger.debug("START %s",ops)
+				if d_min > 0:
+					logger.debug("PD_MIN: P %.0f, want %.0f", sum(x[1] for x in pa), d_min)
+				if d_max > 0:
+					logger.debug("PD_MAX: P %.0f, want %.0f", sum(x[1] for x in pa), d_max)
+				# togger.debug("END %s",ps)
 
 		await intf.set_inv_ps(ps)
 
