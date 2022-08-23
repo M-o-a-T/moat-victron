@@ -127,15 +127,16 @@ async def main(debug):
 			vebus = d.get_value('com.victronenergy.system','/VebusService')
 			uv = d.get_value(vebus, '/Dc/0/Voltage')
 			iv = d.get_value(vebus, '/Dc/0/Current')
-			setp = []
-			curp = []
-			runp = []
+			setp = []  # the power we want this Multi to get/emit
+			curp = []  # The power actually going to/from the grid
+			runp = []  # The power the Multi is feeding to the wire
 			for i in range(3):
 				i += 1
 				setp.append(d.get_value(vebus, f'/Hub4/L{i}/AcPowerSetpoint'))
 				curp.append(d.get_value('com.victronenergy.system', f'/Ac/ActiveIn/L{i}/Power'))
 				runp.append(d.get_value(vebus, f'/Ac/ActiveIn/L{i}/P'))
 			try:
+				# goal / delta to actual / consumption between Multi and Grid
 				pp=[f'{a :5.0f}:{a-c :3.0f}/{b-c :3.0f}' for a,b,c in zip(setp,curp,runp)]
 			except TypeError:
 				pp=[f'{a}:{b}/{c}' for a,b,c in zip(setp,curp,runp)]
@@ -144,7 +145,7 @@ async def main(debug):
 				cvol /= (nc or 1)
 				print(f"{cvol :5.2f}{(cv-cvol) :+4.2f}V  Sol {power :4.0f}W {cur :6.2f}A <{maxcur :3.0f}  Bat {bcur :6.2f}A >{-bmaxd :5.1f}<{bmaxc :5.1f}  Inv {iv :6.2f}A {' '.join(pp)}")
 			except TypeError:
-				print(f"U={cvol} Sol I={cur} {maxcur} {power}  Bat I={bcur} {bmaxc} {bmaxd}  Inv I={iv} P={' '.join(pp)}")
+				print(f"U={cvol} {cv}  Sol I={cur} {maxcur} {power}  Bat I={bcur} {bmaxc} {bmaxd}  Inv I={iv} P={' '.join(pp)}")
 
 
 if __name__ == "__main__":
