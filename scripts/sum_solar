@@ -70,6 +70,8 @@ async def main(debug):
 			'/Ac/Grid/L1/Power': dummy,
 			'/Ac/Grid/L2/Power': dummy,
 			'/Ac/Grid/L3/Power': dummy,
+			'/Ac/ActiveIn/NumberOfPhases': dummy,
+
 		},
 	}
 
@@ -80,6 +82,8 @@ async def main(debug):
 		# logger.info("==onIntervalAlways and onIntervalOnlyWhenChanged==")
 		# logger.info(pprint.pformat(d.get_values(['onIntervalAlways', 'onIntervalAlwaysAndOnEvent'])))
 
+		syst='com.victronenergy.system'
+		phases = d.get_value(syst,'/Ac/ActiveIn/NumberOfPhases')
 		while True:
 			try:
 				await anyio.sleep(1)
@@ -124,13 +128,13 @@ async def main(debug):
 			if bmaxd <= 0.1: okd = False
 			elif not okd: bmaxd = 0
 
-			vebus = d.get_value('com.victronenergy.system','/VebusService')
+			vebus = d.get_value(syst,'/VebusService')
 			uv = d.get_value(vebus, '/Dc/0/Voltage')
 			iv = d.get_value(vebus, '/Dc/0/Current')
 			setp = []
 			curp = []
 			runp = []
-			for i in range(3):
+			for i in range(phases):
 				i += 1
 				setp.append(d.get_value(vebus, f'/Hub4/L{i}/AcPowerSetpoint'))
 				curp.append(d.get_value('com.victronenergy.system', f'/Ac/ActiveIn/L{i}/Power'))
