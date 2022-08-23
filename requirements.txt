@@ -10,3 +10,6 @@ quart_trio
 chevron
 msgpack
 greenback
+pymodbus>=3.0.0.dev
+prompt_toolkit
+pygments
