@@ -479,13 +479,11 @@ class InvControl(BusVars):
 		i_batt = -i_inv - i_pv
 		if i_batt < self.ib_min:
 			# charge
-			breakpoint()
 			p = self.p_from_i(-self.ib_min - i_pv, rev=True)
 			logger.debug("I_MIN: P %.0f, I %.1f < %.1f, PV %.1f", p,i_batt,self.ib_min, i_pv)
 		elif -i_inv-self.i_pv_max > self.ib_max:
 			# discharge
 			p = self.p_from_i(-self.ib_max-self.i_pv_max, rev=True)
-			breakpoint()
 			logger.debug("I_MAX: P %.0f, I %.1f > %.1f, PV %.1f", p,self.ib_max, i_batt, i_pv)
 
 		if excess is not None and p-op > excess:
@@ -640,7 +638,6 @@ class InvModeBase:
 							v += pp+50
 					pb.append((i,v))
 				pa = pb
-				breakpoint()
 				if d > 0:
 					logger.debug("PD_MAX: P %.0f, want %.0f", sum(x[1] for x in pa), d)
 			ps = [ x[1] for x in sorted(pa, key=lambda x:x[0]) ]
