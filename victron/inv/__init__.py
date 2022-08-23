@@ -402,7 +402,7 @@ class InvControl(BusVars):
 
 
 	def calc_batt_i(self, i):
-		logger.debug("Want bat I: %f", i)
+		logger.debug("Want bat I: %.1f", i)
 		ii = max(self.ib_min, min(i, self.ib_max))
 		if ii != i:
 			logger.debug("Adj: bat I: %f", ii)
@@ -411,7 +411,7 @@ class InvControl(BusVars):
 
 
 	def calc_inv_i(self, i):
-		logger.debug("Want inv I: %f", i)
+		logger.debug("Want inv I: %.1f", i)
 		return self.calc_inv_p(self.p_from_i(i))
 
 
@@ -421,7 +421,7 @@ class InvControl(BusVars):
 
 		p_cons+p_grid+p_inv == zero by definition.
 		"""
-		logger.debug("Want grid P: %f", p)
+		logger.debug("Want grid P: %.0f", p)
 
 		p += self.p_cons
 		return self.calc_inv_p(-p, excess=None)
@@ -441,7 +441,7 @@ class InvControl(BusVars):
 		"""
 		Calculate inverter/charger power
 		"""
-		logger.debug("WANT inv P: %f", p)
+		logger.debug("WANT inv P: %.0f", p)
 		op = p
 
 		# if we're close to the top, slow down / stop early
@@ -454,6 +454,7 @@ class InvControl(BusVars):
 			# if we're trying to take less from the battery than required, pull more
 			if inv_i > i_max:
 				p = self.p_from_i(i_max)
+				logger.debug("U_MAX: P %.0f, I %.1f > %.1f", p,inv_i,i_max)
 
 		# The grid may impose power limits
 		p = max(self.pg_min, min(p, self.pg_max))
@@ -468,6 +469,7 @@ class InvControl(BusVars):
 			# if we're trying to feed less to the battery than required, push more
 			if inv_i < i_min:
 				p = self.p_from_i(i_min)
+				logger.debug("U_MIN: P %.0f, I %.1f < %.1f", p,inv_i,i_min)
 
 		# Check against max charge/discharge.
 		# For discharging, consider the min PV value when clouds obscure the sun.
@@ -479,12 +481,15 @@ class InvControl(BusVars):
 			# charge
 			breakpoint()
 			p = self.p_from_i(-self.ib_min - i_pv, rev=True)
+			logger.debug("I_MIN: P %.0f, I %.1f < %.1f, PV %.1f", p,i_batt,self.ib_min, i_pv)
 		elif -i_inv-self.i_pv_max > self.ib_max:
 			# discharge
 			p = self.p_from_i(-self.ib_max-self.i_pv_max, rev=True)
 			breakpoint()
+			logger.debug("I_MAX: P %.0f, I %.1f > %.1f, PV %.1f", p,self.ib_max, i_batt, i_pv)
 
 		if excess is not None and p-op > excess:
+			logger.debug("P_EXC: P %.0f, want %.0f", op+excess, p-op)
 			p = op+excess
 		# Apply consumption offsets. The goal is to never feed in from one phase
 		# while feeding out from another phase.
@@ -612,6 +617,8 @@ class InvModeBase:
 							v -= pp+50
 					pb.append((i,v))
 				pa = pb
+				if d > 0:
+					logger.debug("PD_MIN: P %.0f, want %.0f", sum(x[1] for x in pa), d)
 
 			if pd_max > 0:
 				breakpoint()
@@ -636,6 +643,8 @@ class InvModeBase:
 					pb.append((i,v))
 				pa = pb
 				breakpoint()
+				if d > 0:
+					logger.debug("PD_MAX: P %.0f, want %.0f", sum(x[1] for x in pa), d)
 			ps = [ x[1] for x in sorted(pa, key=lambda x:x[0]) ]
 			logger.debug("END %s",ps)
 
@@ -647,7 +656,7 @@ class InvModeBase:
 		while n<10:
 			await intf.trigger()
 			pp = intf.p_inv
-			logger.debug("now %s", pp)
+			logger.debug("now %.0f", pp)
 			if abs(pp-p) < 50:
 				break
 			p=pp
