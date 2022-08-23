@@ -81,20 +81,25 @@ async def main(debug):
 		# logger.info(pprint.pformat(d.get_values(['onIntervalAlways', 'onIntervalAlwaysAndOnEvent'])))
 
 		while True:
-			await anyio.sleep(1)
+			try:
+				await anyio.sleep(1)
 
-			# chargers
-			cur = 0
-			maxcur = 0
-			power = 0
-			nc = 0
-			cvol = 0
-			for chg in d.get_service_list('com.victronenergy.solarcharger'):
-				cvol += d.get_value(chg, '/Dc/0/Voltage')
-				nc += 1
-				cur += d.get_value(chg, '/Dc/0/Current')
-				maxcur += d.get_value(chg, '/Link/ChargeCurrent') or 0
-				power += d.get_value(chg, '/Yield/Power')
+				# chargers
+				cur = 0
+				maxcur = 0
+				power = 0
+				nc = 0
+				cvol = 0
+				for chg in d.get_service_list('com.victronenergy.solarcharger'):
+					cvol += d.get_value(chg, '/Dc/0/Voltage')
+					nc += 1
+					cur += d.get_value(chg, '/Dc/0/Current')
+					maxcur += d.get_value(chg, '/Link/ChargeCurrent') or 0
+					power += d.get_value(chg, '/Yield/Power')
+
+			except TypeError:
+				print("Incomplete data")
+				continue
 
 			# batteries
 			bvol = 0
