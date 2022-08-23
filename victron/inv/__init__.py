@@ -93,10 +93,9 @@ class InvControl(BusVars):
 	# The sum of all power/current values is zero by definition.
 	# Positive == power/current goes to your home  / DC bus.
 
-	high_delta = 0.3  # min difference between current voltage and whatever the battery says is OK
 	_top_off = False  # go to the battery voltage limit?
-	top_delta = 0.5  # distance to max voltage when not topping off
-	bottom_delta = 1.0  # distance to min voltage
+	umax_diff = 0.5  # distance to max voltage, when not topping off
+	umin_diff = 0.2  # distance to min voltage, lower because the curve isn't as steep
 
 	pg_min = -10000  # watt we may send to the grid
 	pg_max = 10000  # watt we may take from the grid
@@ -448,8 +447,8 @@ class InvControl(BusVars):
 		# if we're close to the top, slow down / stop early
 		if not self._top_off:
 			inv_i = self.i_from_p(p, rev=True)
-			# This varies min battery current from +C/20 at the top to zero at top-top_delta
-			i_dis = self.b_cap/20 * ((self.top_delta-(self.u_max.value-self.u_dc)) / self.top_delta)
+			# This varies min battery current from +C/20 at the top to zero at top-umax_diff
+			i_dis = self.b_cap/20 * ((self.umax_diff-(self.u_max.value-self.u_dc)) / self.umax_diff)
 			i_max = -min(self.ib_max, i_dis+self.i_pv)
 
 			# if we're trying to take less from the battery than required, pull more
@@ -462,8 +461,8 @@ class InvControl(BusVars):
 		# if we're close to the bottom, speed up / charge.
 		if True:
 			inv_i = self.i_from_p(p, rev=True)
-			# This varies max battery current from -C/20 at the bottom to zero at bottom+bottom_delta
-			i_chg = -self.b_cap/20 * ((self.bottom_delta-(self.u_dc-self.u_min.value)) / self.bottom_delta)
+			# This varies max battery current from -C/20 at the bottom to zero at bottom+umin_diff
+			i_chg = -self.b_cap/20 * ((self.umin_diff-(self.u_dc-self.u_min.value)) / self.umin_diff)
 			i_min = -max(self.ib_min, i_chg+self.i_pv)
 
 			# if we're trying to feed less to the battery than required, push more
@@ -482,7 +481,7 @@ class InvControl(BusVars):
 			p = self.p_from_i(-self.ib_min - i_pv, rev=True)
 		elif -i_inv-self.i_pv_max > self.ib_max:
 			# discharge
-			p = self.p_from_i(-self.i_max-self.i_pv_max, rev=True)
+			p = self.p_from_i(-self.ib_max-self.i_pv_max, rev=True)
 			breakpoint()
 
 		if excess is not None and p-op > excess:
