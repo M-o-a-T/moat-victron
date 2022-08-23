@@ -548,7 +548,7 @@ class InvModeBase:
 		# Yes this may result in one grid phase going in while others
 		# go out, but that could already happen anyway and should not
 		# materially increase grid load differences across phases.
-		if not self.running and intf.n_phase > 1:
+		if self.running and intf.n_phase > 1:
 			pd_min = 0
 			pd_max = 0
 			logger.debug("START %s",ps)
