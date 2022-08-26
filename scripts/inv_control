@@ -4,7 +4,6 @@ import sys
 import os
 import anyio
 import asyncclick as click
-import simpleeval
 import ast
 import ruyaml
 
@@ -16,8 +15,6 @@ from asyncdbus.message_bus import MessageBus, BusType
 
 import logging
 logger = logging.getLogger(__name__)
-
-_eval = simpleeval.SimpleEval(functions={})._eval
 
 _modes="""
 Modes:
@@ -80,7 +77,8 @@ async def main(debug, mode, no_op, eval_, config):
 		c = cfg
 		for pp in p[:-1]:
 			c = c.setdefault(pp,{})
-		c[p[-1]] = _eval(v)
+		v=float(v)
+		c[p[-1]] = v
 
 	async with MessageBus(bus_type=BusType.SYSTEM).connect() as bus, \
 	           InvControl(bus, cfg) as inv:
