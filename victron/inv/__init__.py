@@ -564,7 +564,7 @@ class InvModeBase:
 				p_max = self.ps_max[i]
 				# logger.debug("%.0f %.0f %.0f %.0f %.0f %.0f", p_set,p_cur,p_run,p_cons,p_min,p_max)
 
-				if p_set < 0 and p_run < 0:
+				if p_set < 0:
 					if p_set < p_run-20:
 						# power out seems to be limited
 						self.ps_min[i] = p_min = p_run
@@ -579,7 +579,7 @@ class InvModeBase:
 						# this will go below the limit
 						pd_min += p_min-p-50
 
-				elif p_set > 0 and p_run > 0: # same in reverse for p_max
+				elif p_set > 0: # same in reverse for p_max
 					if p_set > p_run+20:
 						self.ps_max[i] = p_max = p_run
 						if p > p_max:
