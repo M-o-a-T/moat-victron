@@ -11,7 +11,11 @@ Also included:
 
 * a couple of patches that this author thinks are particularly helpful.
 
-* Integration with 
+* Integration with the `twe_meter` project, which adds support for
+  several types of energy meter that Venus doesn't support out of the box.
+
+* Integration with the MoaT BMS, which (currently) uses diyBMS cell monitors,
+  with a Rp2040 running MicroPython acting as the controller.
 
 ## Rationale
 
@@ -24,7 +28,7 @@ normally uses for this.
 
 This is way beyond ugly, in this author's opinion. To be sure, there
 were no good alternatives at the time it was written, but that's no
-excuse for keeping it.
+excuse to keep doing it.
 
 This library thus replaces the whole thing with an async library based on `anyio`
 and `asyncdbus`. Usage is a bit different, of course, but there are several
@@ -36,7 +40,9 @@ advantages:
   code, that actually has a chance of running when conditions warrant.
 
 * you can write multi-step control loops with timeouts and whatnot
-  which don't depend on timer callbacks and related unsafe nonsense.
+  which don't depend on timer callbacks and related unsafe nonsense,
+  yet can be cleanly switched off and replaced without terminating your
+  controller.
 
 * etc.
 
