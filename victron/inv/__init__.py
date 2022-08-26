@@ -664,12 +664,17 @@ class InvModeBase:
 		p = intf.p_inv
 		await intf.trigger()
 		n=0
+		nt=False
 		while n<10:
 			await intf.trigger()
 			pp = intf.p_inv
 			logger.debug("now %.0f", pp)
-			if abs(pp-p) < 50:
-				break
+			if abs(pp-p) < intf.p_dampen:
+				if nt:
+					break
+				nt=True
+			else:
+				nt=False
 			p=pp
 			n += 1
 		self.running = True
