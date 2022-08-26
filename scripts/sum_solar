@@ -121,6 +121,7 @@ async def main(debug):
 			okd = True
 			nb = 0
 			cv = 0
+			rd=0
 			for bat in d.get_service_list('com.victronenergy.battery'):
 				bvol += d.get_value(bat,'/Dc/0/Voltage')
 				nb += 1
@@ -130,10 +131,6 @@ async def main(debug):
 				cv = d.get_value(bat, '/Info/MaxChargeVoltage') or 0
 				okc = okc and d.get_value(bat,'/Io/AllowToCharge')
 				okd = okd and d.get_value(bat,'/Io/AllowToDischarge')
-			if bmaxc <= 0.1: okc = False
-			elif not okc: bmaxc = 0
-			if bmaxd <= 0.1: okd = False
-			elif not okd: bmaxd = 0
 
 			vebus = d.get_value('com.victronenergy.system','/VebusService')
 			uv = d.get_value(vebus, '/Dc/0/Voltage')
@@ -154,7 +151,9 @@ async def main(debug):
 
 			try:
 				cvol /= (nc or 1)
-				print(f"{cvol :5.2f}{(cv-cvol) :+4.2f}V  Sol {power :4.0f}W {cur :6.2f}A <{maxcur :3.0f}  Bat {bcur :6.2f}A >{-bmaxd :5.1f}<{bmaxc :5.1f}  Inv {iv :6.2f}A {' '.join(pp)}")
+				#rd += (bcur-cur-iv-rd)/100
+				print(f"{cvol :5.2f}{(cv-cvol) :+4.2f}V  Sol {power :4.0f}W {cur :6.2f}A <{maxcur :3.0f}  Bat {bcur :6.2f}A {'>' if okd else '≫'}{-bmaxd :5.1f}{'<' if okc else '≪'}{bmaxc :5.1f}  Inv {iv :6.2f}A {' '.join(pp)}")
+				#print(f"{cvol :5.2f}{(cv-cvol) :+4.2f}V  Sol {power :4.0f}W {cur :6.2f}A <{maxcur :3.0f}  Bat {bcur :6.2f}A:{cur+iv:6.2f}:{rd:4.2f} {'>' if okd else '≫'}{-bmaxd :5.1f}{'<' if okc else '≪'}{bmaxc :5.1f}  Inv {iv :6.2f}A {' '.join(pp)}")
 			except TypeError:
 				print(f"U={cvol} {cv}  Sol I={cur} {maxcur} {power}  Bat I={bcur} {bmaxc} {bmaxd}  Inv I={iv} P={' '.join(pp)}")
 
