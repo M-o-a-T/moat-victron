@@ -530,7 +530,6 @@ class InvControl(BusVars):
 			logger.debug("-I_MAX: I %.1f > %.1f %.1f %.1f", i_batt, self.ib_min, self.i_pv, self.pv_delta)
 
 		if i_batt < self.ib_min or i_batt > self.ib_max:
-			breakpoint()
 			logger.error("IB ERR %.1f %.1f %.1f", self.ib_min, i_batt, self.ib_max)
 			i_batt = max(self.ib_min,min(self.ib_max,i_batt))
 			#i_inv = -i_batt-self.i_pv
