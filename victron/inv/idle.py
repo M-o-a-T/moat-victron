@@ -7,22 +7,24 @@ from . import InvModeBase
 __all__ = ["InvMode_Idle"]
 
 class InvMode_Idle(InvModeBase):
-	"Continuously set AC output to zero."
+	"Continuously set AC output to zero (or whatever)."
 	_mode = 1
 	_name = "idle"
 
 	power = 0
 
 	_doc = dict(
+		power="The power output(+)/input(-) to set",
 		_l="""\
-This module continually resets the inverter power to a specific value,
+This module continually resets the inverters' output to a specific value,
 defaulting to zero.
 
 This module does not care about battery limits! Specifically, it may
 discharge the battery below the boundary set by the BMS.
 
 The power level is from the point of view of the AC side, i.e.
-positive = inverter, negaive = charger.
+positive = inverter, negaive = charger. It is distributed equally
+across all phases.
 """,
 	)
 
