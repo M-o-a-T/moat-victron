@@ -73,7 +73,18 @@ async def main(debug):
 		},
 	}
 
-	async with DbusMonitor(None, monitorlist, None) as d:
+	# ('com.victronenergy.system', '/Ac/Grid/L2/Power', {'code': None, 'whenToLog': 'configChange', 'accessLevel': None}, {'Value': 561.35498046875, 'Text': '561 W'}, 0)
+
+	def foo(sender, path, _x, value, _y):
+		return  # for debugging
+		if path == "/Info/MaxDischargeCurrent":
+			print(path,value)
+			return
+		if path == "/Io/AllowToDischarge":
+			print(path,value)
+			return
+
+	async with DbusMonitor(None, monitorlist, valueChangedCallback=foo) as d:
 		# logger.info("==configchange values==")
 		# logger.info(pprint.pformat(d.get_values(['configChange'])))
 
