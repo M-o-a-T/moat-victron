@@ -1,0 +1,10 @@
+#!/bin/sh
+
+watch "\
+	dbus -y com.victronenergy.battery.batt /bms/0 GetVoltages;
+    dbus -y com.victronenergy.battery.batt /bms/0 GetCellVoltages;
+    dbus -y com.victronenergy.battery.batt /bms/0 GetBalancing;
+    dbus -y com.victronenergy.battery.batt /bms/0 GetTemperatures;
+"
+
+
