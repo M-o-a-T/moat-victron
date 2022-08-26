@@ -562,7 +562,7 @@ class InvModeBase:
 				p_cons = -intf.p_cons_[i].value
 				p_min = self.ps_min[i]
 				p_max = self.ps_max[i]
-				logger.debug("%.0f %.0f %.0f %.0f %.0f %.0f", p_set,p_cur,p_run,p_cons,p_min,p_max)
+				# logger.debug("%.0f %.0f %.0f %.0f %.0f %.0f", p_set,p_cur,p_run,p_cons,p_min,p_max)
 
 				if p_set < 0 and p_run < 0:
 					if p_set < p_run-20:
@@ -604,7 +604,7 @@ class InvModeBase:
 				# do run a multiphase system on a 12V 20A battery, you're
 				# going to have worse problems than this. :-P
 				pa.sort(key=lambda x: -ps[x[0]] + self.ps_min[x[0]])
-				logger.debug("MIN Pre %s", pa)
+				# logger.debug("MIN Pre %s", pa)
 				pb = []
 				d_min = 0
 				while pa:
@@ -628,9 +628,8 @@ class InvModeBase:
 			if pd_max > 0:
 				# same as above for taking power from the grid.
 				# Not yet tested because it's summer.
-				breakpoint()
 				pa.sort(key=lambda x: ps[x[0]] - self.ps_max[x[0]])
-				logger.debug("MAX Pre %s", pa)
+				# logger.debug("MAX Pre %s", pa)
 				pb = []
 				d_max = 0
 				while pa:
