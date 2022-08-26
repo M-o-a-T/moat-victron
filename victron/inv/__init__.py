@@ -158,6 +158,10 @@ class InvControl(BusVars):
 		super().__init__(bus)
 		self.cfg = cfg
 
+		for k,v in cfg.items():
+			if k in vars(self):
+				setattr(self,k,v)
+
 		self._trigger = anyio.Event()
 
 	@asynccontextmanager
@@ -503,7 +507,18 @@ class InvControl(BusVars):
 
 	async def set_inv_ps(self, ps):
 		# OK, we're safe, implement
-		logger.info("SET inverter %s", " ".join(f"{x :.0f}" for x in ps))
+		if self.cfg.get("op",{}).get("fake", False):
+			if self.n_phase > 1:
+				logger.error("NO-OP SET inverter %.0f ∑ %s", -sum(ps), " ".join(f"{-x :.0f}" for x in ps))
+			else:
+				logger.error("NO-OP SET inverter %.0f", -ps[0])
+			return
+
+		if self.n_phase > 1:
+			logger.info("SET inverter %.0f ∑ %s", -sum(ps), " ".join(f"{-x :.0f}" for x in ps))
+		else:
+			logger.info("SET inverter %.0f", -ps[0])
+
 		for p,v in zip(self.p_set_, ps):
 			await p.set_value(v)
 
@@ -524,11 +539,16 @@ class InvControl(BusVars):
 class InvModeBase:
 	def __init__(self, intf, cfg):
 		self.intf = intf
-		self.cfg = cfg
 		self.ps = None
 		self.ps_min = [-999999999] * intf.n_phase
 		self.ps_max = [999999999] * intf.n_phase
 		self.running = False
+
+		for k,v in cfg.items():
+			if not hasattr(self,k):
+				logger.error("The parameter %r is unknown.", k)
+			setattr(self,k,v)
+
 
 	# p_set_
 	#   the power we want this Multi to get/emit. Negative.

@@ -17,6 +17,7 @@ class InvMode_GridPower(InvModeBase):
 	_doc = dict(
 		feedin="Power to take from(+) / send to(-) the grid",
 		excess="Additional power to feed to the grid if available / battery full. -1=unlimited",
+                phase="Phase to (ab)use. Default: distribute per load.",
 		_l="""\
 This module strives to maintain a constant flow of power from/to the grid.
 
@@ -26,7 +27,6 @@ power to other phases.
 
 If power is available, the battery is charged until the voltage is 0.5V below the
 current max charge voltage, as reported by the BMS.
-
 """,
 	)
 
