@@ -152,8 +152,14 @@ async def main(debug):
 			try:
 				cvol /= (nc or 1)
 				#rd += (bcur-cur-iv-rd)/100
-				print(f"{cvol :5.2f}{(cv-cvol) :+4.2f}V  Sol {power :4.0f}W {cur :6.2f}A <{maxcur :3.0f}  Bat {bcur :6.2f}A {'>' if okd else '≫'}{-bmaxd :5.1f}{'<' if okc else '≪'}{bmaxc :5.1f}  Inv {iv :6.2f}A {' '.join(pp)}")
-				#print(f"{cvol :5.2f}{(cv-cvol) :+4.2f}V  Sol {power :4.0f}W {cur :6.2f}A <{maxcur :3.0f}  Bat {bcur :6.2f}A:{cur+iv:6.2f}:{rd:4.2f} {'>' if okd else '≫'}{-bmaxd :5.1f}{'<' if okc else '≪'}{bmaxc :5.1f}  Inv {iv :6.2f}A {' '.join(pp)}")
+				cvd=cv-cvol
+				if abs(cvd)<1:
+					cvd=f"{cvd :+.2f}"
+					cvd=cvd[0]+cvd[2:]
+				else:
+					cvd=f"{cvd :+3.1f}"
+				print(f"{cvol :5.2f}{cvd}V  Sol {power :5.0f}W {cur :5.1f}A <{maxcur :3.0f}  Bat {bcur :5.1f}A {'>' if okd else '≫'}{-bmaxd :5.1f}{'<' if okc else '≪'}{bmaxc :5.1f}  Inv {iv :5.1f}A {' '.join(pp)}")
+				#print(f"{cvol :5.2f}{(cv-cvol) :+4.2f}V  Sol {power :5.0f}W {cur :5.1f}A <{maxcur :3.0f}  Bat {bcur :5.1f}A:{cur+iv:6.2f}:{rd:4.2f} {'>' if okd else '≫'}{-bmaxd :5.1f}{'<' if okc else '≪'}{bmaxc :5.1f}  Inv {iv :5.1f}A {' '.join(pp)}")
 			except TypeError:
 				print(f"U={cvol} {cv}  Sol I={cur} {maxcur} {power}  Bat I={bcur} {bmaxc} {bmaxd}  Inv I={iv} P={' '.join(pp)}")
 
