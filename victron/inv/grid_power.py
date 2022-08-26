@@ -11,7 +11,7 @@ class InvMode_GridPower(InvModeBase):
 	_mode = 2
 	_name = "gridsetpoint"
 
-	feed_in = -6000
+	feed_in = -20
 	excess = None
 
 	_doc = dict(
