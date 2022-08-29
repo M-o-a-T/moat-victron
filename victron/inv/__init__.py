@@ -512,10 +512,10 @@ class InvControl(BusVars):
 		# 
 		i_pv_min = self.i_pv_max * self.pv_margin
 		if i_batt+i_pv_min > self.ib_max:
-			logger.debug("I_MIN: I %.1f < %.1f", i_batt,i_pv_min)
+			logger.debug("I_MIN: I %.1f < %.1f %.1f", i_batt,self.ib_max,i_pv_min)
 			i_batt = self.ib_max-i_pv_min
 		else:
-			logger.debug("-I_MIN: I %.1f > %.1f", i_batt,i_pv_min)
+			logger.debug("-I_MIN: I %.1f > %.1f %.1f", i_batt,self.ib_max,i_pv_min)
 
 		# The reverse cannot happen because the system tells the solar chargers
 		# how much they may deliver. However, we want to leave a margin for them
@@ -524,11 +524,11 @@ class InvControl(BusVars):
 		i_inv = -i_batt-self.i_pv
 		i_pv_max = -self.ib_min-i_inv  # this is what Venus systemcalc sets the PV max to
 		if i_pv_max-self.i_pv < self.pv_delta:
-			logger.debug("I_MAX: I %.1f < %.1f %.1f", i_pv_max, self.i_pv, self.pv_delta)
+			logger.debug("I_MAX: I %.1f %.1f < %.1f %.1f %.1f", i_batt, i_pv_max, self.ib_min, self.i_pv, self.pv_delta)
 			i_batt -= self.pv_delta-(i_pv_max-self.i_pv)
 			i_inv = -i_batt-self.i_pv
 		else:
-			logger.debug("-I_MAX: I %.1f > %.1f %.1f %.1f", i_batt, self.ib_min, self.i_pv, self.pv_delta)
+			logger.debug("-I_MAX: I %.1f %.1f > %.1f %.1f %.1f", i_batt, i_pv_max, self.ib_min, self.i_pv, self.pv_delta)
 
 		if i_batt < self.ib_min or i_batt > self.ib_max:
 			logger.error("IB ERR %.1f %.1f %.1f", self.ib_min, i_batt, self.ib_max)
@@ -561,8 +561,10 @@ class InvControl(BusVars):
 		# always is a valid state and the BMS plus the Victron system make sure that
 		# the inverter's drawing or feeding in less power than requested won't hurt.
 		if excess is not None and np>0 and np > op+excess:
-			logger.debug("P_EXC: nP %.0f, max %.0f", np, op+excess)
+			logger.debug("P_EXC: nP %.0f, max %.0f+%.0f", np, op,excess)
 			np = op+excess
+		elif excess is not None:
+			logger.debug("-P_EXC: nP %.0f, max %.0f+%.0f", np, op,excess)
 		if np < self.pg_min:
 			logger.info("P_MIN: %.0f < %.0f", np, self.pg_min)
 			np = self.pg_min
