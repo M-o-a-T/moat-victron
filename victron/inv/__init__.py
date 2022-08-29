@@ -455,7 +455,7 @@ class InvControl(BusVars):
 		logger.debug("Want grid P: %.0f", p)
 
 		p = -self.p_cons-p
-		return self.calc_inv_p(p, excess=None)
+		return self.calc_inv_p(p, excess=excess)
 
 	@contextmanager
 	def topping_off(self):
@@ -526,6 +526,7 @@ class InvControl(BusVars):
 		if i_pv_max-self.i_pv < self.pv_delta:
 			logger.debug("I_MAX: I %.1f < %.1f %.1f", i_pv_max, self.i_pv, self.pv_delta)
 			i_batt -= self.pv_delta-(i_pv_max-self.i_pv)
+			i_inv = -i_batt-self.i_pv
 		else:
 			logger.debug("-I_MAX: I %.1f > %.1f %.1f %.1f", i_batt, self.ib_min, self.i_pv, self.pv_delta)
 
