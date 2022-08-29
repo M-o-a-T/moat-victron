@@ -480,7 +480,7 @@ class InvControl(BusVars):
 
 		# if the PV input is close to the maximum, increase power
 		i_max = self.ib_max-i_inv
-		if i_max-i_batt < self.pv_delta:
+		if self.i_pv_max > self.pv_delta and i_max-i_batt < self.pv_delta:
 			logger.debug("I_PVD: I %.1f + %.1f < %.1f", i_batt, i_max, self.pv_delta)
 			i_batt = i_max-self.pv_delta
 		else:
