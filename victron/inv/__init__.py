@@ -487,7 +487,7 @@ class InvControl(BusVars):
 			logger.debug("-I_PVD: I %.1f + %.1f > %.1f", i_batt, i_max, self.pv_delta)
 
 		# if we're close to the max voltage, slow down / stop early
-		i_maxchg = self.b_cap/5 * (((0 if self._top_off else self.umax_diff)-(self.u_max.value-self.u_dc)) / self.umax_diff)
+		i_maxchg = self.b_cap/4 * (((0 if self._top_off else self.umax_diff)-(self.u_max.value-self.u_dc)) / self.umax_diff)
 		if i_batt < i_maxchg:
 			logger.debug("U_MAX: I %.1f < %.1f", i_batt,i_maxchg)
 			i_batt = i_maxchg
