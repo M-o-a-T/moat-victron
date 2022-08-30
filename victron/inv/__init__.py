@@ -119,8 +119,7 @@ class InvControl(BusVars):
 	# TODO collect long term deltas
 
 	# protect battery against excessive discharge if PV current should suddenly
-	# fall off due to clouds. We assume that it'll not drop more than 60% during
-	# any five second interval.
+	# fall off due to clouds. We assume that it'll not drop more than 60%.
 	pv_margin = 0.4
 	# try to keep the max current from the solar chargers this many amps above the 
 	# current amperage so that if solar power increases the system can notice and adapt
