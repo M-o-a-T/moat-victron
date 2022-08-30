@@ -75,13 +75,22 @@ variables that are set in this script.
 
 ### install the LiFePo4wered daemon
 
+If you're using an external Raspberry Pi, you might wonder what to power it from
+so that the system can do a cold start from battery if necessary.
+
+The solution is a LiFePo4wered.com hat with its own battery cell. This add-on
+accepts 12V power, so you can feed it from the MoaT BMS board.
+
+The LiFePo4wered hat requires a daemon that tells it that the Pi is still alive,
+otherwise it will shut down. (You can configure it to power-cycle the Pi instead.)
+
 `git clone http://git.extern.smurf.noris.de/lifepo4wered.git/ ~/lifepo4`
 `cd ~/lifepo4`
 `make USE_SYSTEMD=0 PREFIX=/usr BUS=1 user-install`
 
-Now shut down the Raspberry Pi, install the LiFePo4wered hat, remove the Pi's
-power supply, and hold the hat's button until it powers on. The greed LED should
-stop flashing eventually.
+Now power down the Raspberry Pi, install the LiFePo4wered hat, remove the Pi's
+power supply, and hold the hat's button until your Pi powers on. The hat's green LED
+should stop flashing eventually.
 
 ### setup the MoaT BMS
 
@@ -107,36 +116,57 @@ If the chain ends somewhere, check for a loose cable or a mis-programmed control
 
 ### Calibrate the BMS
 
-First, measure the battery voltage and set the controller's overall voltage to it:
+Start off by dis-engaging the battery relay:
 
-`dbus -y com.victronenergy.battery.batt /bms/0 SetVoltage %25.67`
+`dbus -y com.victronenergy.battery.batt /bms/0 ForceRelay %False`
 
 Next, measure each cell's voltage, to calibrate the meters in the cells' controllers.
 
-`dbus -y com.victronenergy.battery.batt /bms/0/x Identify`
-`dbus -y com.victronenergy.battery.batt /bms/0/x SetVoltage %3.214`
+`dbus -y com.victronenergy.battery.batt /bms/0/NNN Identify`
+`dbus -y com.victronenergy.battery.batt /bms/0/NNN SetVoltage %3.214`
 
-Repeat for X from zero to the number of cells minus one.
+Repeat this for x from 0 to the number of cells minus one.
+
+Measure the battery voltage and set the controller's overall voltage to it:
+
+`dbus -y com.victronenergy.battery.batt /bms/0 SetVoltage %25.67`
 
 `dbus -y com.victronenergy.battery.batt /bms/0 GetVoltages`
 
 Compare the "bms" and "cells" values. Hopefully they're reasonably identical.
 
-Next you can turn on the relay so the Victron devices see your battery:
+Next you should turn on the relay:
 
 `dbus -y com.victronenergy.battery.batt /bms/0 ForceRelay %True`
 
-Now, the solar charger should wake up. Configure it (Bluetooth, VE Direct, VE Bus, …).
-Then connet it to your Venus Pi.
+… and return control of the relay to the BMS:
+
+`dbus -y com.victronenergy.battery.batt /bms/0 ReleaseRelay`
+
+You can use `GetRelayState` to check the current state. This call returns two Boolean
+values: the first states whether the relay is on and the second is `True` if the relay
+state has been fixed via `ForceRelay`.
+
+With the relay engaged, the solar charger should wake up. Configure it
+(Bluetooth, VE Direct, VE Bus, …). Then connect it to your Venus or GX.
 
 Check the Victron GUI what the solar charger thinks the voltage is, and set that:
 `
 `dbus -y com.victronenergy.battery.batt /bms/0 SetExternalVoltage %26.37`
 
+
 ### Set up the Multiplus(es)
 
 You need to enable the ESS assistant. How to do that is documented elsewhere.
 
+
+### Set up Venus/GX
+
+* Settings/ESS: set to "External Control".
+
+* Settings/DVCC: turn on. 
+
 ### Tell the system what to do
 
-TBD
+The `inv\_control` script does the rest of the work.
+
