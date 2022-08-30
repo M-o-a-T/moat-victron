@@ -181,6 +181,7 @@ class InvControl(BusVars):
 	def __init__(self, bus, cfg):
 		super().__init__(bus)
 		self.cfg = cfg
+		self.op = cfg.get("op",{})
 
 		for k,v in cfg.items():
 			if k in vars(self):
@@ -626,7 +627,7 @@ class InvControl(BusVars):
 
 	async def set_inv_ps(self, ps):
 		# OK, we're safe, implement
-		if self.cfg.get("op",{}).get("fake", False):
+		if self.op.get("fake", False):
 			if self.n_phase > 1:
 				logger.error("NO-OP SET inverter %.0f ∑ %s", -sum(ps), " ".join(f"{-x :.0f}" for x in ps))
 			else:

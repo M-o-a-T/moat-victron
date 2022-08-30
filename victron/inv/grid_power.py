@@ -11,8 +11,13 @@ class InvMode_GridPower(InvModeBase):
 	_mode = 2
 	_name = "gridsetpoint"
 
-	feed_in = -20
-	excess = None
+	@property
+	def feed_in(self):
+		return self.intf.op.get("feed_in", 0)
+
+	@property
+	def excess(self):
+		return self.intf.op.get("excess", None)
 
 	_doc = dict(
 		feedin="Power to take from(+) / send to(-) the grid",

@@ -11,7 +11,9 @@ class InvMode_SetSOC(InvModeBase):
 	_mode = 3
 	_name = "soc"
 
-	dest_soc = 90
+	@property
+	def dest_soc(self):
+		return self.intf.op.get("dest_soc", 0)
 
 	_doc = dict(
 		dest_soc="The SoC level to aim towards",

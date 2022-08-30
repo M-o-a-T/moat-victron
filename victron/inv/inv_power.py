@@ -11,9 +11,17 @@ class InvMode_InvPower(InvModeBase):
 	_mode = 4
 	_name = "invsetpoint"
 
-	feed_in = 0
-	excess = None
-	phase = None
+	@property
+	def feed_in(self):
+		return self.intf.op.get("feed_in", 0)
+
+	@property
+	def excess(self):
+		return self.intf.op.get("excess", None)
+
+	@property
+	def phase(self):
+		return self.intf.op.get("phase", None)
 
 	_doc = dict(
 		feed_in="Power for the inverter to take from(+) / send to(-) AC",

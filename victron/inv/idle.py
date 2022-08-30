@@ -11,7 +11,9 @@ class InvMode_Idle(InvModeBase):
 	_mode = 1
 	_name = "idle"
 
-	power = 0
+	@property
+	def power(self):
+		return self.intf.op.get("power", 0)
 
 	_doc = dict(
 		power="The power output(+)/input(-) to set",
