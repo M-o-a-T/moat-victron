@@ -7,14 +7,19 @@ from contextlib import asynccontextmanager, contextmanager
 
 from victron.dbus.utils import DbusInterface, CtxObj, DbusName
 from victron.dbus import Dbus
+from victron.dbus.monitor import DbusMonitor
 from asyncdbus.service import method
 from asyncdbus import DBusError
+from datetime import datetime
+from moat.util import attrdict
+from moat.util.times import time_until
 
 import logging
 logger = logging.getLogger(__name__)
 
 from ._util import balance
 
+_dummy = {'code': None, 'whenToLog': 'configChange', 'accessLevel': None}
 
 class BusVars(CtxObj):
 	"""
@@ -143,6 +148,12 @@ class InvControl(BusVars):
 			raise RuntimeError(f"Mode {target._mode} already known: {cls.MODE[target._mode]}")
 		cls.MODE[target._mode] = target
 		return target
+
+	MON = {
+		'com.victronenergy.solarcharger': {
+			'/Yield/Power': _dummy,
+		},
+	}
 
 	VARS = {
 		'com.victronenergy.system': dict(
@@ -384,6 +395,22 @@ class InvControl(BusVars):
 		except KeyError:
 			return f'?_{v}'
 
+	async def _solar_log(self):
+		async with DbusMonitor(self._bus, self.MON) as mon:
+			power = 0
+			t = anyio.current_time()
+			mt = (min(time_until((n,"min")) for n in range(0,60,15)) - datetime.now()).seconds
+			print(mt)
+			while True:
+				n = 0
+				while n < mt: # 15min
+					t += 1
+					n += 1
+					for chg in mon.get_service_list('com.victronenergy.solarcharger'):
+						power += mon.get_value(chg, '/Yield/Power')
+					await anyio.sleep_until(t)
+				print(power)
+				mt = 900
 
 	async def run(self):
 		self._change_mode_evt = anyio.Event()
