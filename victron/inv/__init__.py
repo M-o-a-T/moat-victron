@@ -271,6 +271,9 @@ class InvControl(BusVars):
 
 
 	async def update_vars(self):
+		if not self.acc_vebus.value:
+			logger.warning("NO vebus")
+			return
 		self.u_min = await self.intf.importer(self.s_battery.value, '/Info/BatteryLowVoltage')
 		self.u_max = await self.intf.importer(self.s_battery.value, '/Info/MaxChargeVoltage')
 		self._ib_chg = await self.intf.importer(self.s_battery.value, '/Info/MaxChargeCurrent')
@@ -423,6 +426,11 @@ class InvControl(BusVars):
 				   self.intf.service(name) as self._srv, \
 				   anyio.create_task_group() as self._tg:
 		   
+			if not self.acc_vebus.value:
+				logger.warning("VEBUS not known")
+				await self.acc_vebus.refresh()
+				if not self.acc_vebus.value:
+					raise RuntimeError("VEBUS not known")
 			await self._init_srv()
 			if not self.op.get("fake", False):
 				self._tg.start_soon(self._solar_log)
