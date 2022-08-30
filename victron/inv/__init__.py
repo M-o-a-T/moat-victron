@@ -7,14 +7,19 @@ from contextlib import asynccontextmanager, contextmanager
 
 from victron.dbus.utils import DbusInterface, CtxObj, DbusName
 from victron.dbus import Dbus
+from victron.dbus.monitor import DbusMonitor
 from asyncdbus.service import method
 from asyncdbus import DBusError
+from datetime import datetime
+from moat.util import attrdict
+from moat.util.times import time_until
 
 import logging
 logger = logging.getLogger(__name__)
 
 from ._util import balance
 
+_dummy = {'code': None, 'whenToLog': 'configChange', 'accessLevel': None}
 
 class BusVars(CtxObj):
 	"""
@@ -93,20 +98,32 @@ class InvControl(BusVars):
 	# The sum of all power/current values is zero by definition.
 	# Positive == power/current goes to your home  / DC bus.
 
+	# when our algorithms say "go from X to Y" we only go partways towards Y,
+	# because otherwise fun nonlinear effects (solar output adapts, battery
+	# voltage changes due to internal resistance, …) cause the system to oscillate.
+	f_dampen = 0.35
+	# but if the delta is smaller than this, just set it.
+	# This is also used as the max "stable" change between values, i.e. assume that
+	# the system has mostly settled down if the charger/inverter load changes
+	# by less than this
+	p_dampen = 100
+
 	_top_off = False  # go to the battery voltage limit?
 	umax_diff = 0.5  # distance to max voltage, when not topping off
-	umin_diff = 0.2  # distance to min voltage, lower because the curve isn't as steep
+	umin_diff = 0.5  # distance to min voltage
 
-	pg_min = -10000  # watt we may send to the grid
-	pg_max = 10000  # watt we may take from the grid
-	inv_eff = 0.85  # inverter's min efficiency
-	p_per_phase = 3000  # inverter's max load per phase
+	pg_min = -12000  # watt we may send to the grid
+	pg_max = 12000  # watt we may take from the grid
+	inv_eff = 0.9  # inverter's min efficiency
+	p_per_phase = 4000  # inverter's max load per phase
 	# TODO collect long term deltas
 
-	pv_margin = 0.4
 	# protect battery against excessive discharge if PV current should suddenly
-	# fall off due to clouds. We assume that it'll not drop more than 60% during
-	# any five second interval.
+	# fall off due to clouds. We assume that it'll not drop more than 60%.
+	pv_margin = 0.4
+	# try to keep the max current from the solar chargers this many amps above the 
+	# current amperage so that if solar power increases the system can notice and adapt
+	pv_delta = 30
 
 	# Per-phase variables
 	# p_set_
@@ -130,6 +147,12 @@ class InvControl(BusVars):
 			raise RuntimeError(f"Mode {target._mode} already known: {cls.MODE[target._mode]}")
 		cls.MODE[target._mode] = target
 		return target
+
+	MON = {
+		'com.victronenergy.solarcharger': {
+			'/Yield/Power': _dummy,
+		},
+	}
 
 	VARS = {
 		'com.victronenergy.system': dict(
@@ -157,6 +180,11 @@ class InvControl(BusVars):
 	def __init__(self, bus, cfg):
 		super().__init__(bus)
 		self.cfg = cfg
+		self.op = cfg.get("op",{})
+
+		for k,v in cfg.items():
+			if k in vars(self):
+				setattr(self,k,v)
 
 		self._trigger = anyio.Event()
 
@@ -216,32 +244,40 @@ class InvControl(BusVars):
 		"""
 		Power as measured by the grid meter.
 		"""
-		return -sum(x.value for x in self.p_grid_)
+		return sum(x.value for x in self.p_grid_)
 
 	@property
 	def ib_max(self):
 		"""
-		Max battery current.
+		Max battery current, discharging.
 		"""
 		# Remember that currents are measured from the PoV of the bus bar.
 		# Thus this is the discharge current, current goes from the battery to the bus.
-		return self._ib_min.value
+		if not self._ok_dis:
+			return 0
+		return self._ib_dis.value
 
 	@property
 	def ib_min(self):
 		"""
-		Max battery current.
+		Max battery current, charging. The charging current is negative
+		so this is the lower limit.
 		"""
 		# Remember that currents are measured from the PoV of the bus bar.
 		# Thus the max charge current is negative, current goes into the battery.
-		return -self._ib_max.value
+		if not self._ok_chg:
+			return 0
+		return -self._ib_chg.value
 
 
 	async def update_vars(self):
 		self.u_min = await self.intf.importer(self.s_battery.value, '/Info/BatteryLowVoltage')
 		self.u_max = await self.intf.importer(self.s_battery.value, '/Info/MaxChargeVoltage')
-		self._ib_max = await self.intf.importer(self.s_battery.value, '/Info/MaxChargeCurrent')
-		self._ib_min = await self.intf.importer(self.s_battery.value, '/Info/MaxDischargeCurrent')
+		self._ib_chg = await self.intf.importer(self.s_battery.value, '/Info/MaxChargeCurrent')
+		self._ib_dis = await self.intf.importer(self.s_battery.value, '/Info/MaxDischargeCurrent')
+		self._ok_chg = await self.intf.importer(self.s_battery.value, '/Io/AllowToCharge')
+		self._ok_dis = await self.intf.importer(self.s_battery.value, '/Io/AllowToDischarge')
+
 		self.b_cap = (await self.intf.importer(self.s_battery.value, '/Capacity', createsignal=False)).value
 		self.p_set_ = []
 		self.p_run_ = []
@@ -288,8 +324,13 @@ class InvControl(BusVars):
 			i = self.i_pv
 			if self.i_pv_max < self.i_pv:
 				self.i_pv_max = self.i_pv
+			elif self.i_pv_max>1000 and self.i_pv < self.i_pv_max * self.pv_margin:
+				# Owch, that was too fast
+				pvm = self.i_pv/self.i_pv_max
+				logger.error("PV went down too fast: margin factor set from %.2f to %.2f", self.pv_margin, pvm)
+				self.pv_margin = pvm
 			else:
-				self.i_pv_max += (self.i_pv-self.i_pv_max)/100
+				self.i_pv_max += (self.i_pv-self.i_pv_max)/20
 			await anyio.sleep(0.9)
 
 	async def _init_srv(self):
@@ -317,6 +358,7 @@ class InvControl(BusVars):
 		await self.mode.set_value(self._mode)
 		self._mode_task = None
 		self._mode_task_stopped = anyio.Event()
+		self.last_p = -self.p_grid-self.p_cons
 		await evt.wait()
 
 	async def _change_mode(self, path, value):
@@ -353,6 +395,22 @@ class InvControl(BusVars):
 		except KeyError:
 			return f'?_{v}'
 
+	async def _solar_log(self):
+		async with DbusMonitor(self._bus, self.MON) as mon:
+			power = 0
+			t = anyio.current_time()
+			mt = (min(time_until((n,"min")) for n in range(0,60,15)) - datetime.now()).seconds
+			print(mt)
+			while True:
+				n = 0
+				while n < mt: # 15min
+					t += 1
+					n += 1
+					for chg in mon.get_service_list('com.victronenergy.solarcharger'):
+						power += mon.get_value(chg, '/Yield/Power')
+					await anyio.sleep_until(t)
+				print(power)
+				mt = 900
 
 	async def run(self):
 		self._change_mode_evt = anyio.Event()
@@ -366,6 +424,8 @@ class InvControl(BusVars):
 				   anyio.create_task_group() as self._tg:
 		   
 			await self._init_srv()
+			if not self.op.get("fake", False):
+				self._tg.start_soon(self._solar_log)
 			async with DbusName(self.bus, f"org.m_o_a_t.inv.main"):
 				while True:
 					await self._change_mode_evt.wait()
@@ -407,7 +467,7 @@ class InvControl(BusVars):
 		if ii != i:
 			logger.debug("Adj: bat I: %f", ii)
 		# i_pv+i_batt+i_inv == zero
-		return self.set_inv_i(-ii - self.i_pv)
+		return self.calc_inv_i(-ii - self.i_pv)
 
 
 	def calc_inv_i(self, i):
@@ -423,8 +483,8 @@ class InvControl(BusVars):
 		"""
 		logger.debug("Want grid P: %.0f", p)
 
-		p += self.p_cons
-		return self.calc_inv_p(-p, excess=None)
+		p = -self.p_cons-p
+		return self.calc_inv_p(p, excess=excess)
 
 	@contextmanager
 	def topping_off(self):
@@ -437,75 +497,159 @@ class InvControl(BusVars):
 		finally:
 			self._top_off = False
 
-	def calc_inv_p(self, p, excess=None):
+	def calc_inv_p(self, p, excess=None, phase=None):
 		"""
 		Calculate inverter/charger power
 		"""
 		logger.debug("WANT inv P: %.0f", p)
 		op = p
 
-		# if we're close to the max voltage, slow down / stop early
-		if not self._top_off:
-			inv_i = self.i_from_p(p, rev=True)
-			# This varies min battery current from +C/20 at the top to zero at top-umax_diff
-			i_dis = self.b_cap/20 * ((self.umax_diff-(self.u_max.value-self.u_dc)) / self.umax_diff)
-			i_max = -min(self.ib_max, i_dis+self.i_pv)
-
-			# if we're trying to take less from the battery than required, pull more
-			if inv_i > i_max:
-				p = self.p_from_i(i_max)
-				logger.debug("U_MAX: P %.0f, I %.1f > %.1f", p,inv_i,i_max)
-
-		# The grid may impose power limits
-		p = max(self.pg_min, min(p, self.pg_max))
-
-		# if we're close to the min voltage, speed up / charge.
-		if True:
-			inv_i = self.i_from_p(p, rev=True)
-			# This varies max battery current from -C/20 at the bottom to zero at bottom+umin_diff
-			i_chg = -self.b_cap/20 * ((self.umin_diff-(self.u_dc-self.u_min.value)) / self.umin_diff)
-			i_min = -max(self.ib_min, i_chg+self.i_pv)
-
-			# if we're trying to feed less to the battery than required, push more
-			if inv_i < i_min:
-				p = self.p_from_i(i_min)
-				logger.debug("U_MIN: P %.0f, I %.1f < %.1f", p,inv_i,i_min)
-
-		# Check against max charge/discharge current.
-		# For discharging, consider the min PV value when clouds obscure the sun.
-		i_pv = min(self.i_pv_max * self.pv_margin, self.i_pv)
 		i_inv = self.i_from_p(p, rev=True)
-		# could use i_batt_avg instead
-		i_batt = -i_inv - i_pv
-		if i_batt < self.ib_min:
-			# charge
-			p = self.p_from_i(-self.ib_min - i_pv, rev=True)
-			logger.debug("I_MIN: P %.0f, I %.1f < %.1f, PV %.1f", p,i_batt,self.ib_min, i_pv)
-		elif -i_inv-self.i_pv_max > self.ib_max:
-			# discharge
-			p = self.p_from_i(-self.ib_max-self.i_pv_max, rev=True)
-			logger.debug("I_MAX: P %.0f, I %.1f > %.1f, PV %.1f", p,self.ib_max, i_batt, i_pv)
+		i_batt = -i_inv-self.i_pv
 
-		if excess is not None and p-op > excess:
-			logger.debug("P_EXC: P %.0f, want %.0f", op+excess, p-op)
+		# if the PV input is close to the maximum, increase power
+		i_max = self.ib_max-i_inv
+		if self.i_pv_max > self.pv_delta and i_max-i_batt < self.pv_delta:
+			logger.debug("I_PVD: I %.1f + %.1f < %.1f", i_batt, i_max, self.pv_delta)
+			i_batt = i_max-self.pv_delta
+		else:
+			logger.debug("-I_PVD: I %.1f + %.1f > %.1f", i_batt, i_max, self.pv_delta)
+
+		# if we're close to the max voltage, slow down / stop early
+		i_maxchg = self.b_cap/4 * (((0 if self._top_off else self.umax_diff)-(self.u_max.value-self.u_dc)) / self.umax_diff)
+		if i_batt < i_maxchg:
+			logger.debug("U_MAX: I %.1f < %.1f", i_batt,i_maxchg)
+			i_batt = i_maxchg
+			i_inv = -i_batt-self.i_pv
+		else:
+			logger.debug("-U_MAX: I %.1f > %.1f", i_batt,i_maxchg)
+
+		# On the other side, if we're close to the min voltage, limit discharge rate.
+		i_maxdis = -self.b_cap/5 * (((self.umin_diff)-(self.u_dc-self.u_min.value)) / self.umin_diff)
+		if i_batt > i_maxdis:
+			logger.debug("U_MIN: I %.1f > %.1f", i_batt,i_maxdis)
+			i_batt = i_maxdis
+			i_inv = -i_batt-self.i_pv
+		else:
+			logger.debug("-U_MIN: I %.1f < %.1f", i_batt,i_maxdis)
+
+		# The system tells the solar chargers how much they may deliver.
+		# However, we want to leave a margin for them
+		# so that we can actually notice when PV output increases.
+		#
+		i_pv_max = -self.ib_min-i_inv  # this is what Venus systemcalc sets the PV max to
+		if i_pv_max-self.i_pv < self.pv_delta:
+			logger.debug("I_MAX: I %.1f %.1f < %.1f %.1f %.1f", i_batt, i_pv_max, self.ib_min, self.i_pv, self.pv_delta)
+			i_batt -= self.pv_delta-(i_pv_max-self.i_pv)
+			i_inv = -i_batt-self.i_pv
+		else:
+			logger.debug("-I_MAX: I %.1f %.1f > %.1f %.1f %.1f", i_batt, i_pv_max, self.ib_min, self.i_pv, self.pv_delta)
+
+		# Now check some AC limits.
+		p = self.p_from_i(i_inv)
+
+		if excess is not None and p>0 and p > op+excess:
+			logger.debug("P_EXC: nP %.0f, max %.0f+%.0f", p, op,excess)
 			p = op+excess
-		# Apply consumption offsets. The goal is to never feed in from one phase
-		# while feeding out from another phase.
-		# This step must not change the total.
+		elif excess is not None:
+			logger.debug("-P_EXC: nP %.0f, max %.0f+%.0f", p, op,excess)
 
-		self.load = [ b.value for b in self.p_cons_ ]
+		if p < self.pg_min:
+			logger.info("P_MIN: %.0f < %.0f", p, self.pg_min)
+			p = self.pg_min
+		elif p > self.pg_max:
+			logger.info("P_MAX: %.0f > %.0f", p, self.pg_max)
+			p = self.pg_max
+
+		# We want to be on the safe side with varying PV input. Consider this state:
+		# * PV delivers 60 A
+		# * battery discharge maximum is 60 A
+		# * thus we think it's safe for the inverter to take 120A
+		# * now PV output drops to 20A due to an ugly black cloud
+		# * 40A over the discharge limit is probably enough to trip the BMS
+		# * … owch.
+		# 
+		i_inv = self.i_from_p(p, rev=True)
+		i_pv_min = self.i_pv_max * self.pv_margin
+		if -i_inv-i_pv_min > self.ib_max:
+			logger.debug("I_MIN: I %.1f < %.1f %.1f %.1f", i_inv,self.ib_max,i_pv_min,self.i_pv)
+			i_inv = -i_pv_min-self.ib_max
+			i_batt = -i_inv-self.i_pv
+
+		else:
+			logger.debug("-I_MIN: I %.1f > %.1f %.1f %.1f", i_inv,self.ib_max,i_pv_min,self.i_pv)
+
+		if i_batt < self.ib_min or i_batt > self.ib_max:
+			logger.error("IB ERR %.1f %.1f %.1f", self.ib_min, i_batt, self.ib_max)
+			i_batt = max(self.ib_min,min(self.ib_max,i_batt))
+			i_inv = -i_batt-self.i_pv
+
+
+		# back to the AC side
+		p = self.p_from_i(i_inv)
+
+		# "Normal" adaption needs to be gradual because the parameters
+		# feed back on themselves. We don't want positive feedback loops.
+		if abs(p-self.last_p) < self.p_dampen:
+			# Small change. Implement directly.
+			np = p
+		else:
+			pd = (p-self.last_p)*self.f_dampen
+			# The original step was > p_dampen but the scaled-down step
+			# might not be, which is not quite what's intended: a smaller
+			# step should be taken last.
+			if -self.p_dampen < pd < 0:
+				pd = -self.p_dampen
+			elif 0 < pd < self.f_dampen:
+				pd = self.p_dampen
+			np = self.last_p + pd
+			logger.debug("P_GRAD: %.0f > %.0f = %.0f", self.last_p,p,np)
+		self.last_p = np
+
+		if phase is None and self.n_phase > 1:
+			return self.to_phases(np)
+		ps = [0] * self.n_phase
+		ps[phase-1 if phase else 0] = np
+		return ps
+
+
+	def to_phases(self, p):
+		"""
+		Distribute a given power to the phases so that the result is balanced,
+		or at least as balanced as possible given that to feed in from one phase
+		while sending energy out to another phase is a waste of energy.
+
+		This step does not change the total, assuming the per-phase limits
+		are not exceeded.
+		"""
+
+		self.load = [ -b.value for b in self.p_cons_ ]
 		load_avg = sum(self.load)/self.n_phase
 
-		ps = [ -p/self.n_phase - (g-load_avg) for g in self.load ]
+		ps = [ p/self.n_phase - (g-load_avg) for g in self.load ]
 		ps = balance(ps, min=-self.p_per_phase, max=self.p_per_phase)
 		return ps
 
 
 	async def set_inv_ps(self, ps):
 		# OK, we're safe, implement
-		logger.info("SET inverter %s", " ".join(f"{x :.0f}" for x in ps))
+		if self.op.get("fake", False):
+			if self.n_phase > 1:
+				logger.error("NO-OP SET inverter %.0f ∑ %s", -sum(ps), " ".join(f"{-x :.0f}" for x in ps))
+			else:
+				logger.error("NO-OP SET inverter %.0f", -ps[0])
+			return
+
+		if self.n_phase > 1:
+			logger.info("SET inverter %.0f ∑ %s", -sum(ps), " ".join(f"{-x :.0f}" for x in ps))
+		else:
+			logger.info("SET inverter %.0f", -ps[0])
+
 		for p,v in zip(self.p_set_, ps):
-			await p.set_value(v)
+			await p.set_value(-v)
+			# Victron Multiplus: negative=inverting: positive=charging
+			# This code: negative=takes from AC, positive=feeds to AC power
+			# thus this is inverted
 
 			
 	@property
@@ -524,11 +668,16 @@ class InvControl(BusVars):
 class InvModeBase:
 	def __init__(self, intf, cfg):
 		self.intf = intf
-		self.cfg = cfg
 		self.ps = None
 		self.ps_min = [-999999999] * intf.n_phase
 		self.ps_max = [999999999] * intf.n_phase
 		self.running = False
+
+		for k,v in cfg.items():
+			if not hasattr(self,k):
+				logger.error("The parameter %r is unknown.", k)
+			setattr(self,k,v)
+
 
 	# p_set_
 	#   the power we want this Multi to get/emit. Negative.
@@ -562,9 +711,9 @@ class InvModeBase:
 				p_cons = -intf.p_cons_[i].value
 				p_min = self.ps_min[i]
 				p_max = self.ps_max[i]
-				logger.debug("%.0f %.0f %.0f %.0f %.0f %.0f", p_set,p_cur,p_run,p_cons,p_min,p_max)
+				# logger.debug("%.0f %.0f %.0f %.0f %.0f %.0f", p_set,p_cur,p_run,p_cons,p_min,p_max)
 
-				if p_set < 0 and p_run < 0:
+				if p_set < 0:
 					if p_set < p_run-20:
 						# power out seems to be limited
 						self.ps_min[i] = p_min = p_run
@@ -579,7 +728,7 @@ class InvModeBase:
 						# this will go below the limit
 						pd_min += p_min-p-50
 
-				elif p_set > 0 and p_run > 0: # same in reverse for p_max
+				elif p_set > 0: # same in reverse for p_max
 					if p_set > p_run+20:
 						self.ps_max[i] = p_max = p_run
 						if p > p_max:
@@ -600,11 +749,11 @@ class InvModeBase:
 				#
 				# We add a fudge of 50W so that we can discover (in the next
 				# round's first pass) whether the limit has been lifted.
-				# This is too high for small batteries, but if you really
+				# 50W is too high for small batteries, but if you really
 				# do run a multiphase system on a 12V 20A battery, you're
 				# going to have worse problems than this. :-P
 				pa.sort(key=lambda x: -ps[x[0]] + self.ps_min[x[0]])
-				logger.debug("MIN Pre %s", pa)
+				# logger.debug("MIN Pre %s", pa)
 				pb = []
 				d_min = 0
 				while pa:
@@ -616,7 +765,7 @@ class InvModeBase:
 						v = p_min-50
 					else:
 						pp = d_min/(len(pa)+1)
-						if v-pp < p_min: # goes to min
+						if v-pp < p_min: # limited by min
 							d_min -= v-p_min
 							v = p_min-50
 						else: # can use pp
@@ -626,9 +775,10 @@ class InvModeBase:
 				pa = pb
 
 			if pd_max > 0:
-				breakpoint()
+				# same as above for taking power from the grid.
+				# Not yet tested because it's summer.
 				pa.sort(key=lambda x: ps[x[0]] - self.ps_max[x[0]])
-				logger.debug("MAX Pre %s", pa)
+				# logger.debug("MAX Pre %s", pa)
 				pb = []
 				d_max = 0
 				while pa:
@@ -639,7 +789,7 @@ class InvModeBase:
 						v = p_max+50
 					else:
 						pp = d_max/(len(pa)+1)
-						if v+pp > p_max: # goes to max
+						if v+pp > p_max: # limited by max
 							d_max -= p_max-v
 							v = p_max+50
 						else: # can use pp
@@ -662,12 +812,17 @@ class InvModeBase:
 		p = intf.p_inv
 		await intf.trigger()
 		n=0
+		nt=False
 		while n<10:
 			await intf.trigger()
 			pp = intf.p_inv
 			logger.debug("now %.0f", pp)
-			if abs(pp-p) < 50:
-				break
+			if abs(pp-p) < intf.p_dampen:
+				if nt:
+					break
+				nt=True
+			else:
+				nt=False
 			p=pp
 			n += 1
 		self.running = True

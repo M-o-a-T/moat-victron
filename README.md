@@ -3,18 +3,32 @@
 This repository attempts to establish a modern framework for talking to
 Victron Energy products, mainly via Dbus.
 
+Also included:
+
+* a modular program to control the charger/inverter.
+
+* a status monitor that emits a single line with the salient facts, every second.
+
+* a couple of patches that this author thinks are particularly helpful.
+
+* Integration with the `twe_meter` project, which adds support for
+  several types of energy meter that Venus doesn't support out of the box.
+
+* Integration with the MoaT BMS, which (currently) uses diyBMS cell monitors,
+  with a Rp2040 running MicroPython acting as the controller.
+
 ## Rationale
 
 The original Victron code uses synchronous Python and manages its
 tasks et al. with GLib. Its documentation warns in multiple places
-that GLib likes to swallow errors and might leaves the system in an
+that GLib likes to swallow errors and might leave the system in an
 inconsistent state; it even includes a helper that, on error, directly
 kills the program, circumventing the SystemExit exception Python
 normally uses for this.
 
 This is way beyond ugly, in this author's opinion. To be sure, there
 were no good alternatives at the time it was written, but that's no
-excuse for keeping it.
+excuse to keep doing it.
 
 This library thus replaces the whole thing with an async library based on `anyio`
 and `asyncdbus`. Usage is a bit different, of course, but there are several
@@ -26,7 +40,9 @@ advantages:
   code, that actually has a chance of running when conditions warrant.
 
 * you can write multi-step control loops with timeouts and whatnot
-  which don't depend on timer callbacks and related unsafe nonsense.
+  which don't depend on timer callbacks and related unsafe nonsense,
+  yet can be cleanly switched off and replaced without terminating your
+  controller.
 
 * etc.
 
