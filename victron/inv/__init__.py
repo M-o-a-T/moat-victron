@@ -520,6 +520,7 @@ class InvControl(BusVars):
 		if i_batt < i_maxchg:
 			logger.debug("U_MAX: I %.1f < %.1f", i_batt,i_maxchg)
 			i_batt = i_maxchg
+			i_inv = -i_batt-self.i_pv
 		else:
 			logger.debug("-U_MAX: I %.1f > %.1f", i_batt,i_maxchg)
 
@@ -528,29 +529,14 @@ class InvControl(BusVars):
 		if i_batt > i_maxdis:
 			logger.debug("U_MIN: I %.1f > %.1f", i_batt,i_maxdis)
 			i_batt = i_maxdis
+			i_inv = -i_batt-self.i_pv
 		else:
 			logger.debug("-U_MIN: I %.1f < %.1f", i_batt,i_maxdis)
 
-		# We need to be on the safe side WRT considering PV current. Consider this state:
-		# * PV delivers 60 A
-		# * battery discharge is limited to 60 A
-		# * thus we think it's safe to take 120A
-		# * now PV output drops to 20A due to an ugly black cloud
-		# * 40A over the discharge limit is probably enough to trip the BMS
-		# * … owch.
-		# 
-		i_pv_min = self.i_pv_max * self.pv_margin
-		if i_batt+i_pv_min > self.ib_max:
-			logger.debug("I_MIN: I %.1f < %.1f %.1f", i_batt,self.ib_max,i_pv_min)
-			i_batt = self.ib_max-i_pv_min
-		else:
-			logger.debug("-I_MIN: I %.1f > %.1f %.1f", i_batt,self.ib_max,i_pv_min)
-
-		# The reverse cannot happen because the system tells the solar chargers
-		# how much they may deliver. However, we want to leave a margin for them
+		# The system tells the solar chargers how much they may deliver.
+		# However, we want to leave a margin for them
 		# so that we can actually notice when PV output increases.
 		#
-		i_inv = -i_batt-self.i_pv
 		i_pv_max = -self.ib_min-i_inv  # this is what Venus systemcalc sets the PV max to
 		if i_pv_max-self.i_pv < self.pv_delta:
 			logger.debug("I_MAX: I %.1f %.1f < %.1f %.1f %.1f", i_batt, i_pv_max, self.ib_min, self.i_pv, self.pv_delta)
@@ -559,15 +545,50 @@ class InvControl(BusVars):
 		else:
 			logger.debug("-I_MAX: I %.1f %.1f > %.1f %.1f %.1f", i_batt, i_pv_max, self.ib_min, self.i_pv, self.pv_delta)
 
+		# Now check some AC limits.
+		p = self.p_from_i(i_inv)
+
+		if excess is not None and p>0 and p > op+excess:
+			logger.debug("P_EXC: nP %.0f, max %.0f+%.0f", p, op,excess)
+			p = op+excess
+		elif excess is not None:
+			logger.debug("-P_EXC: nP %.0f, max %.0f+%.0f", p, op,excess)
+
+		if p < self.pg_min:
+			logger.info("P_MIN: %.0f < %.0f", p, self.pg_min)
+			p = self.pg_min
+		elif p > self.pg_max:
+			logger.info("P_MAX: %.0f > %.0f", p, self.pg_max)
+			p = self.pg_max
+
+		# We want to be on the safe side with varying PV input. Consider this state:
+		# * PV delivers 60 A
+		# * battery discharge maximum is 60 A
+		# * thus we think it's safe for the inverter to take 120A
+		# * now PV output drops to 20A due to an ugly black cloud
+		# * 40A over the discharge limit is probably enough to trip the BMS
+		# * … owch.
+		# 
+		i_inv = self.i_from_p(p, rev=True)
+		i_pv_min = self.i_pv_max * self.pv_margin
+		if -i_inv-i_pv_min > self.ib_max:
+			logger.debug("I_MIN: I %.1f < %.1f %.1f %.1f", i_inv,self.ib_max,i_pv_min,self.i_pv)
+			i_inv = -i_pv_min-self.ib_max
+			i_batt = -i_inv-self.i_pv
+
+		else:
+			logger.debug("-I_MIN: I %.1f > %.1f %.1f %.1f", i_inv,self.ib_max,i_pv_min,self.i_pv)
+
 		if i_batt < self.ib_min or i_batt > self.ib_max:
 			logger.error("IB ERR %.1f %.1f %.1f", self.ib_min, i_batt, self.ib_max)
 			i_batt = max(self.ib_min,min(self.ib_max,i_batt))
-			#i_inv = -i_batt-self.i_pv
+			i_inv = -i_batt-self.i_pv
 
-		# We'll assume that this works.
+
+		# back to the AC side
 		p = self.p_from_i(i_inv)
 
-		# All adaption needs to be gradual because the parameters
+		# "Normal" adaption needs to be gradual because the parameters
 		# feed back on themselves. We don't want positive feedback loops.
 		if abs(p-self.last_p) < self.p_dampen:
 			# Small change. Implement directly.
@@ -575,7 +596,7 @@ class InvControl(BusVars):
 		else:
 			pd = (p-self.last_p)*self.f_dampen
 			# The original step was > p_dampen but the scaled-down step
-			# might not be, which is not quite what's intended: any smaller
+			# might not be, which is not quite what's intended: a smaller
 			# step should be taken last.
 			if -self.p_dampen < pd < 0:
 				pd = -self.p_dampen
@@ -585,26 +606,10 @@ class InvControl(BusVars):
 			logger.debug("P_GRAD: %.0f > %.0f = %.0f", self.last_p,p,np)
 		self.last_p = np
 
-		# Apply external limits.
-		# WARNING: the changes below here must go towards zero, because "nothing happens"
-		# always is a valid state and the BMS plus the Victron system make sure that
-		# the inverter's drawing or feeding in less power than requested won't hurt.
-		if excess is not None and np>0 and np > op+excess:
-			logger.debug("P_EXC: nP %.0f, max %.0f+%.0f", np, op,excess)
-			np = op+excess
-		elif excess is not None:
-			logger.debug("-P_EXC: nP %.0f, max %.0f+%.0f", np, op,excess)
-		if np < self.pg_min:
-			logger.info("P_MIN: %.0f < %.0f", np, self.pg_min)
-			np = self.pg_min
-		elif np > self.pg_max:
-			logger.info("P_MAX: %.0f > %.0f", np, self.pg_max)
-			np = self.pg_max
-
 		if phase is None and self.n_phase > 1:
 			return self.to_phases(np)
 		ps = [0] * self.n_phase
-		ps[0 if phase is None else phase-1] = np
+		ps[phase-1 if phase else 0] = np
 		return ps
 
 
