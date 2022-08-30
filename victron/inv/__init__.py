@@ -182,8 +182,16 @@ class InvControl(BusVars):
 		self.cfg = cfg
 		self.op = cfg.get("op",{})
 
-		for k,v in cfg.items():
-			if k in vars(self):
+		for k,v in cfg.get("system",{}).items():
+			try:
+				vv = getattr(self,k)
+				if not isinstance(vv,(type(None),int,float,str)):
+					raise RuntimeError
+			except AttributeError:
+				logger.error("System param unknown: %r", k)
+			except RuntimeError:
+				logger.error("Not a system param: %r", k)
+			else:
 				setattr(self,k,v)
 
 		self._trigger = anyio.Event()
@@ -548,7 +556,8 @@ class InvControl(BusVars):
 		i_pv_max = -self.ib_min-i_inv  # this is what Venus systemcalc sets the PV max to
 		if i_pv_max-self.i_pv < self.pv_delta:
 			logger.debug("I_MAX: I %.1f %.1f < %.1f %.1f %.1f", i_batt, i_pv_max, self.ib_min, self.i_pv, self.pv_delta)
-			i_batt -= self.pv_delta-(i_pv_max-self.i_pv)
+			d = self.pv_delta-(i_pv_max-self.i_pv)
+			i_batt -= d
 			i_inv = -i_batt-self.i_pv
 		else:
 			logger.debug("-I_MAX: I %.1f %.1f > %.1f %.1f %.1f", i_batt, i_pv_max, self.ib_min, self.i_pv, self.pv_delta)
