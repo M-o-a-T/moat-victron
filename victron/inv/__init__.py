@@ -425,6 +425,8 @@ class InvControl(BusVars):
 				   anyio.create_task_group() as self._tg:
 		   
 			await self._init_srv()
+			if not self.op.get("fake", False):
+				self._tg.start_soon(self._solar_log)
 			async with DbusName(self.bus, f"org.m_o_a_t.inv.main"):
 				while True:
 					await self._change_mode_evt.wait()
