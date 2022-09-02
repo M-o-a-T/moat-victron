@@ -219,7 +219,7 @@ def wrap_dbus_value(value):
 		return Variant('s', value)
 	if isinstance(value, (bytes,bytearray)):
 		return Variant('ay', value)
-	if isinstance(value, list):
+	if isinstance(value, (list, tuple)):
 		if len(value) == 0:
 			# If the list is empty we cannot infer the type of the contents. So assume unsigned integer.
 			# A (signed) integer is dangerous, because an empty list of signed integers is used to encode
