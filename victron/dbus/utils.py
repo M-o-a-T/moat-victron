@@ -233,6 +233,10 @@ def wrap_dbus_value(value):
 	raise ValueError("No idea how to encode %r (%s)" % (value,type(value).__name__))
 
 
+def unwrap_dbus_dict(value):
+	"""as unwrap_dbus_value but doesn't unwrap the dict itself"""
+	return { str(k): unwrap_dbus_value(v) for k,v in value.items() }
+
 def unwrap_dbus_value(val):
 	"""Unwraps values wrapped in Variant objects."""
 	if not isinstance(val, Variant):
