@@ -30,13 +30,12 @@ positive = inverter, negaive = charger.
 """,
 	)
 
-	async def run(self, task_status):
+	async def run(self):
 		intf = self.intf
 
 		logger.info("SET inverter ZERO %.0f", self.power)
 		for p in intf.p_set_:
 			await p.set_value(-self.power/intf.n_phase)
-		task_status.started()
 		while True:
 			await anyio.sleep(99999)
 

@@ -30,15 +30,12 @@ across all phases.
 """,
 	)
 
-	async def run(self, task_status):
+	async def run(self):
 		intf = self.intf
 
 		logger.info("SET inverter IDLE %.0f", self.power)
 		while True:
 			for p in intf.p_set_:
 				await p.set_value(-self.power/intf.n_phase)
-			if task_status is not None:
-				task_status.started()
-				task_status = None
-			await anyio.sleep(20)
+			await intf.trigger(20)
 

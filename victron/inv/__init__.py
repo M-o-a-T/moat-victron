@@ -5,7 +5,7 @@ import os
 import anyio
 from contextlib import asynccontextmanager, contextmanager
 
-from victron.dbus.utils import DbusInterface, CtxObj, DbusName
+from victron.dbus.utils import DbusInterface, CtxObj, DbusName, wrap_dbus_dict, unwrap_dbus_dict
 from victron.dbus import Dbus
 from victron.dbus.monitor import DbusMonitor
 from asyncdbus.service import method
@@ -61,23 +61,26 @@ class InvInterface(DbusInterface):
 		self.ctrl = ctrl
 		super().__init__(ctrl.bus, "/Control", "inv")
 
-		del self.ctrl
-
 	@method()
-	async def GetModes(self) -> 'a{s(is)}':
+	async def GetModes(self) -> 'as':
 		"""
-		Return a dict of available methods.
+		Return a list of available methods.
 		name => (ident#, descr)
 		"""
-		res = {}
-		for i,nm in InvControl.MODE.items():
-			n,m = nm
-			res[n] = (i, m.__doc__)
-		return res
+		return [ m._name for m in InvControl.MODES.values() ]
 
 	@method()
-	async def SetMode(self, mode: 'i') -> 'a{s(is)}':
-		await self.ctrl.change_mode(mode)
+	async def GetModeInfo(self, mode: 's') -> 'a{ss}':
+		m = InvControl.MODES[mode]
+		return m._doc
+
+	@method()
+	async def SetMode(self, mode: 's', args: 'a{sv}') -> 'b':
+		return await self.ctrl.change_mode(mode, unwrap_dbus_dict(args))
+
+	@method()
+	async def GetState(self) -> 'a{sv}':
+		return wrap_dbus_dict(self.ctrl.get_state())
 
 
 class InvControl(BusVars):
@@ -101,14 +104,14 @@ class InvControl(BusVars):
 	# when our algorithms say "go from X to Y" we only go partways towards Y,
 	# because otherwise fun nonlinear effects (solar output adapts, battery
 	# voltage changes due to internal resistance, …) cause the system to oscillate.
-	f_dampen = 0.35
+	f_step = 0.35
 	# but if the delta is smaller than this, just set it.
 	# This is also used as the max "stable" change between values, i.e. assume that
 	# the system has mostly settled down if the charger/inverter load changes
 	# by less than this
-	p_dampen = 100
+	p_step = 100
 
-	_top_off = False  # go to the battery voltage limit?
+	top_off = False  # go to the battery voltage limit?
 	umax_diff = 0.5  # distance to max voltage, when not topping off
 	umin_diff = 0.5  # distance to min voltage
 
@@ -125,6 +128,10 @@ class InvControl(BusVars):
 	# current amperage so that if solar power increases the system can notice and adapt
 	pv_delta = 30
 
+	# 
+	cap_scale = 4
+	#
+	r_int=0.01
 	# Per-phase variables
 	# p_set_
 	#   Multi, /Hub4/L{i}/AcPowerSetpoint
@@ -140,12 +147,12 @@ class InvControl(BusVars):
 	#   The power other consumers are taking from the bus. Negative.
 	#
 
-	MODE = {}
+	MODES = {}
 	@classmethod
 	def register(cls, target):
-		if target._mode in cls.MODE:
-			raise RuntimeError(f"Mode {target._mode} already known: {cls.MODE[target._mode]}")
-		cls.MODE[target._mode] = target
+		if target._name in cls.MODES:
+			raise RuntimeError(f"Mode {target._mode} already known: {cls.MODES[target._mode]}")
+		cls.MODES[target._name] = target
 		return target
 
 	MON = {
@@ -195,6 +202,16 @@ class InvControl(BusVars):
 				setattr(self,k,v)
 
 		self._trigger = anyio.Event()
+		self.clear_state()
+	
+	def clear_state(self):
+		self._state = {}
+
+	def get_state(self):
+		return self._state
+
+	def set_state(self, k,v):
+		self._state[k] = v
 
 	@asynccontextmanager
 	async def _ctx(self):
@@ -215,7 +232,8 @@ class InvControl(BusVars):
 
 	@property
 	def u_dc(self):
-		return self._u_dc.value
+		# consider internal resistance
+		return self._u_dc.value+self.i_batt*self.r_int
 
 	@property
 	def batt_soc(self):
@@ -363,48 +381,51 @@ class InvControl(BusVars):
 			connected=1,
 		)
 
-		self.mode = await srv.add_path("/Mode", 0, description="Controller mode", writeable=True, onchangecallback=self._change_mode, gettextcallback=self._mode_name)
+		# self.mode = await srv.add_path("/Mode", 0, description="Controller mode", writeable=True, onchangecallback=self._change_mode, gettextcallback=self._mode_name)
 
 		self._mode = self.cfg.get("mode",0)
-		await self.mode.set_value(self._mode)
+		# await self.mode.set_value(self._mode)
 		self._mode_task = None
 		self._mode_task_stopped = anyio.Event()
-		self.last_p = -self.p_grid-self.p_cons
+		self.dest_p = self.last_p = -self.p_grid-self.p_cons
 		await evt.wait()
 
 	async def _change_mode(self, path, value):
 		await self.change_mode(value)
 
-	async def change_mode(self, value):
+	async def change_mode(self, mode:str, data={}):
 		if self._change_mode_evt is None:
 			raise DBusError("org.m_o_a_t.inv.too_early", "try again later")
-		self._mode = value
-		if self._mode_task is not None:
-			self._mode_task.cancel()
-			await self._mode_task_stopped.wait()
-		self._change_mode_evt.set()
+		if mode not in self.MODES:
+			raise DBusError("org.m_o_a_t.inv.unknown", "unknown mode")
+		if self._mode != mode:
+			self._mode = mode
+			if self._mode_task is not None:
+				self._mode_task.cancel()
+				await self._mode_task_stopped.wait()
+			self._change_mode_evt.set()
 
-	async def _run_mode_task(self, *, task_status=None):
+		self.op.update(data)
+		return True
+
+	async def _run_mode_task(self):
 		if self._mode_task is not None:
 			raise RuntimeError("cannot run two tasks")
 		try:
 			with anyio.CancelScope() as self._mode_task:
-				m = self.MODE[self._mode]
-				cfg = self.cfg.get(m._name, {})
-				await m(self, cfg).run(task_status)
+				m = self.MODES[self._mode]
+				self.clear_state()
+				self.set_state("mode",m._name)
+				self.set_state("mode_params",self.op)
+				logger.debug("MODE %s %r", m._name, self.op)
+				await m(self).run()
 		finally:
+			logger.debug("MODE STOP %s", m._name)
 			self._mode_task = None
 			self._mode_task_stopped.set()
 
 	async def _start_mode_task(self):
-		await self._tg.start(self._run_mode_task)
-
-	@classmethod
-	def _mode_name(cls, path, value):
-		try:
-			return cls.MODE[value]._name
-		except KeyError:
-			return f'?_{v}'
+		self._tg.start_soon(self._run_mode_task)
 
 	async def _solar_log(self):
 		async with DbusMonitor(self._bus, self.MON) as mon:
@@ -423,6 +444,33 @@ class InvControl(BusVars):
 				print(power)
 				mt = 900
 
+	async def _init_intf(self):
+		proxy = await self._bus.get_proxy_object(self.s_battery.value, "/bms")
+		self._bms_intf = await proxy.get_interface("org.m_o_a_t.bms")
+
+		self._batt_intf = []
+		for i in range(await self._bms_intf.call_get_n_batteries()):
+			proxy = await self._bus.get_proxy_object(self.s_battery.value, f"/bms/{i}")
+			self._batt_intf.append(await proxy.get_interface("org.m_o_a_t.bms"))
+		# TODO multiple batteries
+	
+	async def get_bms_work(self, poll:bool = False, clear:bool = False):
+		return await self._bms_intf.call_get_work(poll, clear)
+
+	async def get_bms_voltages(self):
+		return [ unwrap_dbus_dict(x) for x in await self._bms_intf.call_get_voltages() ]
+
+	async def get_bms_currents(self):
+		return await self._bms_intf.call_get_currents()
+
+	async def get_bms_config(self):
+		return unwrap_dbus_dict(await self._bms_intf.call_get_config())
+
+	async def set_bms_capacity(self, n:int, cap:float, loss:float, top:bool=False):
+		if n != 0:
+			raise NotImplementedError(n)
+		return await self._batt_intf[n].call_set_capacity(cap, loss, top)
+
 	async def run(self):
 		self._change_mode_evt = anyio.Event()
 		self._change_mode_evt.set()
@@ -434,6 +482,7 @@ class InvControl(BusVars):
 				   self.intf.service(name) as self._srv, \
 				   anyio.create_task_group() as self._tg:
 		   
+			self._tg.start_soon(self._init_intf)
 			if not self.acc_vebus.value:
 				logger.warning("VEBUS not known")
 				await self.acc_vebus.refresh()
@@ -442,7 +491,7 @@ class InvControl(BusVars):
 			await self._init_srv()
 			if not self.op.get("fake", False):
 				self._tg.start_soon(self._solar_log)
-			async with DbusName(self.bus, f"org.m_o_a_t.inv.main"):
+			async with DbusName(self.bus, f"org.m_o_a_t.inv.{self.cfg.get('name', 'fake' if self.op.get('fake', False) else 'main')}"):
 				while True:
 					await self._change_mode_evt.wait()
 					self._change_mode_evt = None
@@ -457,10 +506,11 @@ class InvControl(BusVars):
 		Set `rev` if you want to know the DC current you'd need for a given AC power.
 		"""
 		res = -p / self.u_dc
-		if rev:
+		if rev == (res<0):
 			res /= self.inv_eff
 		else:
 			res *= self.inv_eff
+		# logger.debug("I %.1f from P %.0f %s", res, p, "R" if rev else "")
 		return res
 
 	def p_from_i(self, i, rev=False):
@@ -470,10 +520,11 @@ class InvControl(BusVars):
 		Set `rev` if you want to know the AC power you'd need for a given DC current.
 		"""
 		res = -i * self.u_dc
-		if rev:
+		if rev == (res>0):
 			res /= self.inv_eff
 		else:
 			res *= self.inv_eff
+		# logger.debug("P %.0f from I %.1f %s", res, i, "R" if rev else "")
 		return res
 
 
@@ -502,21 +553,18 @@ class InvControl(BusVars):
 		p = -self.p_cons-p
 		return self.calc_inv_p(p, excess=excess)
 
-	@contextmanager
-	def topping_off(self):
-		"""
-		Context manager that allows getting close to the battery's max voltage.
-		"""
-		self._top_off = True
-		try:
-			yield self
-		finally:
-			self._top_off = False
-
 	def calc_inv_p(self, p, excess=None, phase=None):
 		"""
 		Calculate inverter/charger power
 		"""
+		lims = []
+		no_lims = []
+		p_info = dict(
+			limits=lims,
+			# non_limits=no_lims,
+			init=p,
+		)
+
 		logger.debug("WANT inv P: %.0f", p)
 		op = p
 
@@ -525,58 +573,118 @@ class InvControl(BusVars):
 
 		# if the PV input is close to the maximum, increase power
 		i_max = self.ib_max-i_inv
+		lim = dict(
+			rule="I_PVD",
+			pvmax=self.i_pv_max, pvdelta=self.pv_delta,
+			imax=i_max, ib=i_batt,
+			lim="pvmax>pvdelta, imax-ib<pvdelta",
+		)
 		if self.i_pv_max > self.pv_delta and i_max-i_batt < self.pv_delta:
-			logger.debug("I_PVD: I %.1f + %.1f < %.1f", i_batt, i_max, self.pv_delta)
-			i_batt = i_max-self.pv_delta
+			lim["fix"] = "ib=imax-pv_delta"
+			lim["res"] = i_batt = i_max-self.pv_delta
+			lims.append(lim)
 		else:
-			logger.debug("-I_PVD: I %.1f + %.1f > %.1f", i_batt, i_max, self.pv_delta)
+			no_lims.append(lim)
 
 		# if we're close to the max voltage, slow down / stop early
-		i_maxchg = self.b_cap/4 * (((0 if self._top_off else self.umax_diff)-(self.u_max.value-self.u_dc)) / self.umax_diff)
+		i_maxchg = self.b_cap/self.cap_scale * ((0 if self.top_off else self.umax_diff)-(self.u_max.value-self.u_dc)) / self.umax_diff
+		lim=dict(
+			rule="U_MAX",
+			max=i_maxchg, cap_lim=self.b_cap/self.cap_scale, 
+			range=(0 if self.top_off else self.umax_diff, self.u_max.value-self.u_dc, self.umax_diff),
+			umax=self.u_max.value, udc=self.u_dc, ib=i_batt,
+			lim="ib<max",
+		)
 		if i_batt < i_maxchg:
-			logger.debug("U_MAX: I %.1f < %.1f", i_batt,i_maxchg)
+			lim["fix"] = "ib=max"
 			i_batt = i_maxchg
 			i_inv = -i_batt-self.i_pv
+			lims.append(lim)
+			lim["res"] = {"batt": i_batt, "inv": i_inv}
 		else:
-			logger.debug("-U_MAX: I %.1f > %.1f", i_batt,i_maxchg)
+			no_lims.append(lim)
 
 		# On the other side, if we're close to the min voltage, limit discharge rate.
-		i_maxdis = -self.b_cap/5 * (((self.umin_diff)-(self.u_dc-self.u_min.value)) / self.umin_diff)
+		i_maxdis = -self.b_cap/self.cap_scale * (self.umin_diff-(self.u_dc-self.u_min.value)) / self.umin_diff
+		lim=dict(
+			rule="U_MIN",
+			min=i_maxdis, cap_lim=self.b_cap/self.cap_scale, 
+			range=(self.umin_diff, self.u_dc-self.u_min.value),
+			umin=self.u_min.value, udc=self.u_dc, ib=i_batt,
+			lim="ib<min",
+		)
 		if i_batt > i_maxdis:
-			logger.debug("U_MIN: I %.1f > %.1f", i_batt,i_maxdis)
+			lim["fix"] = "ib=min"
 			i_batt = i_maxdis
 			i_inv = -i_batt-self.i_pv
+			lim["res"] = {"batt": i_batt, "inv": i_inv}
+			lims.append(lim)
 		else:
-			logger.debug("-U_MIN: I %.1f < %.1f", i_batt,i_maxdis)
+			no_lims.append(lim)
 
 		# The system tells the solar chargers how much they may deliver.
 		# However, we want to leave a margin for them
 		# so that we can actually notice when PV output increases.
 		#
 		i_pv_max = -self.ib_min-i_inv  # this is what Venus systemcalc sets the PV max to
+		lim=dict(
+			rule="I_MAX",
+			max=i_pv_max, ipv=self.i_pv, pvdelta=self.pv_delta,
+			ibmin=self.ib_min, inv=i_inv,
+			lim="max-ipv<pvdelta",
+		)
 		if i_pv_max-self.i_pv < self.pv_delta:
-			logger.debug("I_MAX: I %.1f %.1f < %.1f %.1f %.1f", i_batt, i_pv_max, self.ib_min, self.i_pv, self.pv_delta)
-			d = self.pv_delta-(i_pv_max-self.i_pv)
+			lim["d"] = d = self.pv_delta-(i_pv_max-self.i_pv)
+			lim["fix"] = "ib-=d"
 			i_batt -= d
 			i_inv = -i_batt-self.i_pv
+			lim["res"] = {"batt": i_batt, "inv": i_inv}
+			lims.append(lim)
 		else:
-			logger.debug("-I_MAX: I %.1f %.1f > %.1f %.1f %.1f", i_batt, i_pv_max, self.ib_min, self.i_pv, self.pv_delta)
+			no_lims.append(lim)
 
 		# Now check some AC limits.
 		p = self.p_from_i(i_inv)
 
-		if excess is not None and p>0 and p > op+excess:
-			logger.debug("P_EXC: nP %.0f, max %.0f+%.0f", p, op,excess)
-			p = op+excess
-		elif excess is not None:
-			logger.debug("-P_EXC: nP %.0f, max %.0f+%.0f", p, op,excess)
+		if excess is None:
+			no_lims.append({"rule":"P_EXC", "exc":"-"})
+		else:
+			lim=dict(
+				rule="P_EXC",
+				lim="p>op+exc, p>0",
+				p=p,op=op,exc=excess,
+			)
+			if p>0 and p > op+excess:
+				lim["fix"] = "p=op+exc"
+				lim["res"] = p = op+excess
+				lims.append(lim)
+			else:
+				no_lims.append(lim)
 
+		lim = dict(
+			rule="P_MIN",
+			p=p, min=self.pg_min,
+			lim="p<min",
+		)
 		if p < self.pg_min:
-			logger.info("P_MIN: %.0f < %.0f", p, self.pg_min)
-			p = self.pg_min
-		elif p > self.pg_max:
-			logger.info("P_MAX: %.0f > %.0f", p, self.pg_max)
-			p = self.pg_max
+			lim["fix"] = "p=min"
+			lim["res"] = p = self.pg_min
+			lims.append(lim)
+		else:
+			no_lims.append(lim)
+
+		lim = dict(
+			rule="P_MAX",
+			p=p, max=self.pg_max,
+			lim="p>max",
+		)
+		if p > self.pg_max:
+			lim["fix"] = "p=max"
+			lim["res"] = p = self.pg_max
+			lims.append(lim)
+		else:
+			no_lims.append(lim)
+
 
 		# We want to be on the safe side with varying PV input. Consider this state:
 		# * PV delivers 60 A
@@ -588,47 +696,98 @@ class InvControl(BusVars):
 		# 
 		i_inv = self.i_from_p(p, rev=True)
 		i_pv_min = self.i_pv_max * self.pv_margin
+		lim = dict(
+			rule="I_MIN",
+			inv=i_inv, pvmin=i_pv_min, ibmax=self.ib_max,
+			lim="-inv-pvmin>ibmax",
+		)
 		if -i_inv-i_pv_min > self.ib_max:
-			logger.debug("I_MIN: I %.1f < %.1f %.1f %.1f", i_inv,self.ib_max,i_pv_min,self.i_pv)
 			i_inv = -i_pv_min-self.ib_max
 			i_batt = -i_inv-self.i_pv
-
+			lim["fix"] = "inv=-pvmin-ibmax"
+			lim["res"] = {"batt": i_batt, "inv": i_inv}
+			lims.append(lim)
 		else:
-			logger.debug("-I_MIN: I %.1f > %.1f %.1f %.1f", i_inv,self.ib_max,i_pv_min,self.i_pv)
+			no_lims.append(lim)
 
-		if i_batt < self.ib_min or i_batt > self.ib_max:
-			logger.error("IB ERR %.1f %.1f %.1f", self.ib_min, i_batt, self.ib_max)
-			i_batt = max(self.ib_min,min(self.ib_max,i_batt))
+		lim = dict(
+			rule="IB_ERR_L",
+			batt=i_batt, min=self.ib_min,
+			lim="batt<min",
+		)
+		if i_batt < self.ib_min:
+			lim["fix"] = "batt=min",
+			i_batt = self.ib_min
 			i_inv = -i_batt-self.i_pv
+			lim["res"] = {"batt": i_batt, "inv": i_inv}
+		# no add to no_lims because it's too obvious
+
+		lim = dict(
+			rule="IB_ERR_H",
+			batt=i_batt, max=self.ib_max,
+			lim="batt>max",
+		)
+		if i_batt > self.ib_max:
+			lim["fix"] = "batt=max",
+			i_batt = self.ib_max
+			i_inv = -i_batt-self.i_pv
+			lim["res"] = {"batt": i_batt, "inv": i_inv}
+		# no add to no_lims because it's too obvious
 
 
 		# back to the AC side
 		p = self.p_from_i(i_inv)
 
-		# "Normal" adaption needs to be gradual because the parameters
-		# feed back on themselves. We don't want positive feedback loops.
-		if abs(p-self.last_p) < self.p_dampen:
-			# Small change. Implement directly.
+		# This part ensures that we don't take too-huge steps towards
+		# the new value, which would cause instabilities.
+		if self.small_p_step(self.last_p, p):
+			# Small(ish) change from last target. Implement directly.
 			np = p
+			self.step = 1
 		else:
-			pd = (p-self.last_p)*self.f_dampen
-			# The original step was > p_dampen but the scaled-down step
-			# might not be, which is not quite what's intended: a smaller
-			# step should be taken last.
-			if -self.p_dampen < pd < 0:
-				pd = -self.p_dampen
-			elif 0 < pd < self.f_dampen:
-				pd = self.p_dampen
+			if self.small_p_step(self.dest_p, p):
+				# the goal is roughly the same as last time
+				self.step += 1
+			else:
+				# reset the step counter if the goal has changed significantly
+				self.step = 2
+
+			# The first step goes 1/3rd towards the destination (if f_step
+			# is 1/3). The second step, ~ halfway. This tries to strike a
+			# hopefully-reasonable balance between slow exponential decay
+			# and going too fast.
+			pd = (p-self.last_p) * self.f_step**(2/self.step)
+
+			# If the scaled-off step is < p_step, use that instead:
+			# smaller steps should be taken last.
+			if abs(pd) < self.p_step:
+				pd = self.p_step * (-1 if pd<0 else 1)
+			lim["step"] = pd
 			np = self.last_p + pd
 			logger.debug("P_GRAD: %.0f > %.0f = %.0f", self.last_p,p,np)
+
+		p_info["dest"] = self.dest_p = p
 		self.last_p = np
 
+		p_info["setpoint"] = np
+
 		if phase is None and self.n_phase > 1:
-			return self.to_phases(np)
-		ps = [0] * self.n_phase
-		ps[phase-1 if phase else 0] = np
+			ps = self.to_phases(np)
+		else:
+			ps = [0] * self.n_phase
+			ps[phase-1 if phase else 0] = np
+		p_info["inv_phases"] = ps
+		self.set_state("inverter", p_info)
 		return ps
 
+	def small_p_step(self, p, q):
+		if abs(p-q) < self.p_step:
+			return True
+		if (p>0) != (q>0):
+			return False
+		if 10/12 < ((self.p_step+abs(p))/(self.p_step+abs(q))) < 12/10:
+			return True
+		return False
 
 	def to_phases(self, p):
 		"""
@@ -683,18 +842,12 @@ class InvControl(BusVars):
 
 
 class InvModeBase:
-	def __init__(self, intf, cfg):
+	def __init__(self, intf):
 		self.intf = intf
 		self.ps = None
 		self.ps_min = [-999999999] * intf.n_phase
 		self.ps_max = [999999999] * intf.n_phase
 		self.running = False
-
-		for k,v in cfg.items():
-			if not hasattr(self,k):
-				logger.error("The parameter %r is unknown.", k)
-			setattr(self,k,v)
-
 
 	# p_set_
 	#   the power we want this Multi to get/emit. Negative.
@@ -834,7 +987,7 @@ class InvModeBase:
 			await intf.trigger()
 			pp = intf.p_inv
 			logger.debug("now %.0f", pp)
-			if abs(pp-p) < intf.p_dampen:
+			if abs(pp-p) < intf.p_step:
 				if nt:
 					break
 				nt=True
@@ -854,7 +1007,7 @@ def _loader(path, cls, reg):
 		m = import_module("."+name, package=_loader.__module__)
 		for n in m.__all__:
 			c = getattr(m,n)
-			if isinstance(c,type) and issubclass(c,cls) and hasattr(c,'_mode'):
+			if isinstance(c,type) and issubclass(c,cls) and hasattr(c,'_name'):
 				reg(c)
 
 	path = Path(__path__[0])

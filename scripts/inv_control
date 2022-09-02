@@ -20,12 +20,12 @@ _modes="""
 Modes:
 
 """
-for _i,_c in InvControl.MODE.items():
+for _i,_c in InvControl.MODES.items():
 	_modes += "\b\n"
-	_modes += f"{_c._mode :2d} {_c._name :<15s} {_c.__doc__}\n\n\b\n"
+	_modes += f"{_c._name :<15s} {_c.__doc__}\n\n\b\n"
 	_modes += "   "+_c._doc["_l"].replace("\n","\n   ").replace("\n   \n","\n\n\b\n").rstrip(" ") + "\n\b\n"
 	if len(_c._doc) > 1:
-		_modes += "   * Operational Variables:\n"
+		_modes += "   Operational Variables:\n"
 	for k,v in _c._doc.items():
 		if k[0] == "_":
 			continue
@@ -36,10 +36,10 @@ for _i,_c in InvControl.MODE.items():
 @click.command(epilog=_modes)
 @click.option("--debug", "-d", is_flag=True)
 @click.option("--no-op", "-n", is_flag=True)
-@click.option("--mode", "-m", type=int, help="Inverter mode", default=0)
-@click.option("--param", "-p", "eval_", nargs=2, type=(str,str), multiple=True, help="Parameter (evaluated)")
+@click.option("--mode", "-m", help="Inverter mode")
+@click.option("--param", "-p", "param", nargs=2, type=(str,str), multiple=True, help="Parameter (evaluated)")
 @click.option("--config","--cfg", "-c", "config", type=click.File("r"), help="Configuration file (YAML)")
-async def main(debug, mode, no_op, eval_, config):
+async def main(debug, mode, no_op, param, config):
 	"""
 	This program controls a Victron Energy inverter.
 	"""
@@ -65,7 +65,7 @@ async def main(debug, mode, no_op, eval_, config):
 	op["debug"] += debug
 	op["fake"] = no_op
 
-	for k,v in eval_:
+	for k,v in param:
 		v=float(v)
 		op[k] = v
 
