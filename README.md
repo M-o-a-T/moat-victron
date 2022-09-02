@@ -51,6 +51,10 @@ advantages:
 The modules `victron.dbus` and `victron.dbus.monitor` are suitably modified,
 if not rewritten, copies of `/opt/victronenergy/dbus-systemcalc-py/ext/velib-python`.
 
+## Battery Management
+
+A submodule of this archive implements a Battery Management System ("BMS").
+
 ## Random stuff
 
 ### Notes

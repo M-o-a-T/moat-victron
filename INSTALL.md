@@ -92,6 +92,71 @@ Now power down the Raspberry Pi, install the LiFePo4wered hat, remove the Pi's
 power supply, and hold the hat's button until your Pi powers on. The hat's green LED
 should stop flashing eventually.
 
+### edit the config file
+
+#### batt.batt.n
+
+The number of cells in your battery.
+
+#### batt.cell.balance.min
+
+The cell voltage above which balancing should start.
+
+#### batt.cell.balance.d
+
+The voltage difference between cells which triggers balancing. (Actually, balancing won't
+start until the difference is twice this value.)
+
+0.015 is a sensible value.
+
+#### batt.cell.balance.n
+
+The number of cells that can be balanced at the same time. Zero: all of them.
+
+#### batt.cell.balance.r
+
+Hysteresis ratio, so the balancer won't turn cells on and off all the time.
+
+Sensible values are between zero and 0.3 or so.
+
+#### batt.batt.i.min, .max
+
+The battery's "hard" current limits. The protective relay will trip if these are exceeded.
+Leave ample margin so that this won't happen during normal operation. Things tend to break
+when disconnected under load.
+
+#### batt.batt.i.ext min, .max
+
+The battery's current limits as communicated to the rest of the Victron system.
+
+These limits are reduced automatically when a cell approaches its voltage minimum / maximum.
+
+#### batt.cell.u.min, .max
+
+Your cell's "hard" voltage limts. The protective relay will trip if these are exceeded.
+Leave ample margin so that this won't happen during normal operation.
+
+#### batt.cell.u.ext.min, .max
+
+The cell's operating range.
+
+#### batt.cell.u.lim.min, .max
+
+The voltage range which the BMS considers "safe", i.e. current limits are maxed when all
+cells are within this range.
+
+Note: The voltage limits reported to the Venus/GX system are not a simple multiple of the
+cells' voltages. The BMS accounts for non-balanced cell voltages.
+
+#### batt.batt.u.min, .max
+
+Additional protection is provided by a voltage sensor on the BMS. It is not particularly accurate,
+so you should probably set the minimum to somewhere between batt.cell.u.ext.min and batt.cell.u.min,
+multiplied with the number of cells of course. Ditto for .max.
+
+The BMS will tell the system to stop charging/discharging when the midpoint between this value
+and the calculated safe minimum/maximum (based on cell limits) is crossed.
+
 ### setup the MoaT BMS
 
 Change to `bus/python`. Copy `config/bms.cfg` and adapt to your battery, cells, etc..
@@ -114,11 +179,25 @@ LEDs should all light up and stay on for a bit. If they don't:
 
 If the chain ends somewhere, check for a loose cable or a mis-programmed controller.
 
+
 ### Calibrate the BMS
 
-Start off by dis-engaging the battery relay:
+Start off by disengaging the battery relay:
 
 `dbus -y com.victronenergy.battery.batt /bms/0 ForceRelay %False`
+
+If you're using the battery to generate 12V, remove the DC converter's fuse.
+(Assuming that its power passes through the current sensor.)
+
+The command
+
+`dbus -y com.victronenergy.battery.batt /bms/0 GetWork %True %True`
+
+measures the energy going in and out of the battery. The numbers for "chg" and "dis"
+should be identical, over time. If they are not, adjust the offset via the Dbus
+'SetCurrentOffset' function.
+
+Put the fuse back if you removed it.
 
 Next, measure each cell's voltage, to calibrate the meters in the cells' controllers.
 
@@ -135,7 +214,7 @@ Measure the battery voltage and set the controller's overall voltage to it:
 
 Compare the "bms" and "cells" values. Hopefully they're reasonably identical.
 
-Next you should turn on the relay:
+Next, engage the relay:
 
 `dbus -y com.victronenergy.battery.batt /bms/0 ForceRelay %True`
 
@@ -148,7 +227,7 @@ values: the first states whether the relay is on and the second is `True` if the
 state has been fixed via `ForceRelay`.
 
 With the relay engaged, the solar charger should wake up. Configure it
-(Bluetooth, VE Direct, VE Bus, …). Then connect it to your Venus or GX.
+(Bluetooth, VE Direct, VE Bus, …) and connect it to your Venus or GX.
 
 Check the Victron GUI what the solar charger thinks the voltage is, and set that:
 `
@@ -166,7 +245,15 @@ You need to enable the ESS assistant. How to do that is documented elsewhere.
 
 * Settings/DVCC: turn on. 
 
+
 ### Tell the system what to do
 
-The `inv\_control` script does the rest of the work.
+The `inv\_control` script does the rest of the work. You might want to start with `-m analyze
+-p top\_off 1` which top-balances your battery and then proceeds to measuring its capacity.
+
+You should run `-m analyze` to measure the battery's real-use capacity. The BMS will then use
+the result to display a reasonable SoC (State of Charge), as relying on cell voltage tends to
+be notoriously wrong.
+
+Normal use is `-m gridsetpoint`, which tells your inverter to hold your grid power at zero if possible.
 
