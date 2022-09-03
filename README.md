@@ -78,3 +78,12 @@ The result of this being set is that DVCC always sets solar power to
 max and won't reduce it even if the battery becomes overloaded.
 This is obviously a very bad idea.
 
+#### Confing file examples
+
+The files named '24 are used on a small test system (24V, 10Ah, Multiplus 24/500),
+with 80 Wp solar input.
+
+The others are in use on a "production" 48V, 280Ah, 3-phase Multiplus II 5000 system
+with 11 kWp of solar arrays.
+
+The BMS code in `bus/python` controls both sets of batteries.
