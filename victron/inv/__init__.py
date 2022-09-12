@@ -640,6 +640,18 @@ class InvControl(BusVars):
 		# However, we want to leave a margin for them
 		# so that we can actually notice when PV output increases.
 		#
+#             'limits': [{'d': 17.970052750227836,
+#                         'fix': 'ib-=d',
+#                         'ibmin': -83.2819387025245,
+#                         'inv': -56.74800979149463,
+#                         'ipv': 128.00000124424696,
+#                         'lim': 'max-ipv<pvdelta',
+#                         'max': 140.02994849401912,
+#                         'pvdelta': 30,
+#                         'res': {'batt': -89.22204420298016,
+#                                 'inv': -38.7779570412668},
+#                         'rule': 'I_MAX'}],
+
 		i_pv_max = -self.ib_min-i_inv  # this is what Venus systemcalc sets the PV max to
 		lim=dict(
 			rule="I_MAX",
@@ -660,6 +672,7 @@ class InvControl(BusVars):
 		# Now check some AC limits.
 		p = self.p_from_i(i_inv)
 
+		# Don't exceed what we're allowed to feed to the grid.
 		if excess is None:
 			no_lims.append({"rule":"P_EXC", "exc":"-"})
 		else:
@@ -675,6 +688,7 @@ class InvControl(BusVars):
 			else:
 				no_lims.append(lim)
 
+		# Don't overload the charger.
 		lim = dict(
 			rule="P_MIN",
 			p=p, min=self.pg_min,
@@ -687,6 +701,7 @@ class InvControl(BusVars):
 		else:
 			no_lims.append(lim)
 
+		# Don't overload the inverter.
 		lim = dict(
 			rule="P_MAX",
 			p=p, max=self.pg_max,
@@ -714,6 +729,7 @@ class InvControl(BusVars):
 			rule="I_MIN",
 			inv=i_inv, pvmin=i_pv_min, ibmax=self.ib_max,
 			lim="-inv-pvmin>ibmax",
+			max = self.i_pv_max, margin=self.pv_margin
 		)
 		if -i_inv-i_pv_min > self.ib_max:
 			i_inv = -i_pv_min-self.ib_max
@@ -724,6 +740,7 @@ class InvControl(BusVars):
 		else:
 			no_lims.append(lim)
 
+		# Don't push more into the battery than allowed.
 		lim = dict(
 			rule="IB_ERR_L",
 			batt=i_batt, min=self.ib_min,
@@ -736,6 +753,7 @@ class InvControl(BusVars):
 			lim["res"] = {"batt": i_batt, "inv": i_inv}
 		# no add to no_lims because it's too obvious
 
+		# Don't pull more from the battery than allowed.
 		lim = dict(
 			rule="IB_ERR_H",
 			batt=i_batt, max=self.ib_max,
@@ -776,8 +794,8 @@ class InvControl(BusVars):
 			# smaller steps should be taken last.
 			if abs(pd) < self.p_step:
 				pd = self.p_step * (-1 if pd<0 else 1)
-			lim["step"] = pd
 			np = self.last_p + pd
+			lim["step"] = (pd,self.last_p,p,np)
 			logger.debug("P_GRAD: %.0f > %.0f = %.0f", self.last_p,p,np)
 
 		p_info["dest"] = self.dest_p = p
