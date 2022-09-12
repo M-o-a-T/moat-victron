@@ -401,17 +401,19 @@ class InvControl(BusVars):
 		await self.change_mode(value)
 
 	async def change_mode(self, mode:str, data={}):
-		if self._change_mode_evt is None:
-			raise DBusError("org.m_o_a_t.inv.too_early", "try again later")
-		if mode not in self.MODES:
-			raise DBusError("org.m_o_a_t.inv.unknown", "unknown mode")
 		if self._mode != mode:
+			if self._change_mode_evt is None:
+				raise DBusError("org.m_o_a_t.inv.too_early", "try again later")
+			if mode not in self.MODES:
+				raise DBusError("org.m_o_a_t.inv.unknown", "unknown mode")
 			self._mode = mode
+			# TODO verify the new mode's parameters
 			if self._mode_task is not None:
 				self._mode_task.cancel()
 				await self._mode_task_stopped.wait()
 			self._change_mode_evt.set()
 
+		# else TODO verify parameters for current mode
 		self.op.update(data)
 		return True
 
@@ -428,9 +430,7 @@ class InvControl(BusVars):
 			with anyio.CancelScope() as self._mode_task:
 				m = self.MODES[self._mode]
 				self.clear_state()
-				self.set_state("mode",m._name)
-				self.set_state("mode_params",self.op)
-				logger.debug("MODE %s %r", m._name, self.op)
+				self.set_state("mode", [m._name, self.op])
 				await m(self).run()
 		finally:
 			logger.debug("MODE STOP %s", m._name)
