@@ -4,6 +4,7 @@ import sys
 import os
 import anyio
 from contextlib import asynccontextmanager, contextmanager
+from typing import Any
 
 from victron.dbus.utils import DbusInterface, CtxObj, DbusName, wrap_dbus_dict, unwrap_dbus_value, unwrap_dbus_dict
 from victron.dbus import Dbus
