@@ -5,7 +5,7 @@ import os
 import anyio
 from contextlib import asynccontextmanager, contextmanager
 
-from victron.dbus.utils import DbusInterface, CtxObj, DbusName, wrap_dbus_dict, unwrap_dbus_dict
+from victron.dbus.utils import DbusInterface, CtxObj, DbusName, wrap_dbus_dict, unwrap_dbus_value, unwrap_dbus_dict
 from victron.dbus import Dbus
 from victron.dbus.monitor import DbusMonitor
 from asyncdbus.service import method
@@ -77,6 +77,10 @@ class InvInterface(DbusInterface):
 	@method()
 	async def SetMode(self, mode: 's', args: 'a{sv}') -> 'b':
 		return await self.ctrl.change_mode(mode, unwrap_dbus_dict(args))
+
+	@method()
+	async def SetModeParam(self, param: 's', value: 'v') -> 'b':
+		return await self.ctrl.change_mode_param(param, unwrap_dbus_value(value))
 
 	@method()
 	async def GetState(self) -> 'a{sv}':
@@ -409,6 +413,12 @@ class InvControl(BusVars):
 			self._change_mode_evt.set()
 
 		self.op.update(data)
+		return True
+
+	async def change_mode_param(self, param: str, value: Any) -> bool:
+		if not param or param[0]=='_' or param not in self.MODES[self._mode]._doc:
+			raise DBusError("org.m_o_a_t.inv.unknown", f"unknown parameter for {self._mode}")
+		self.op[param] = value
 		return True
 
 	async def _run_mode_task(self):
