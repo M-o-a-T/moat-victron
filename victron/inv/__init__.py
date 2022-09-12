@@ -352,6 +352,8 @@ class InvControl(BusVars):
 		# well that's a lie, currently we only track i_pv_max.
 		while True:
 			i = self.i_pv
+			if i is None:
+				continue
 			if self.i_pv_max < self.i_pv:
 				self.i_pv_max = self.i_pv
 			elif self.i_pv_max>1000 and self.i_pv < self.i_pv_max * self.pv_margin:
@@ -440,7 +442,7 @@ class InvControl(BusVars):
 					t += 1
 					n += 1
 					for chg in mon.get_service_list('com.victronenergy.solarcharger'):
-						power += mon.get_value(chg, '/Yield/Power')
+						power += (mon.get_value(chg, '/Yield/Power') or 0)
 					await anyio.sleep_until(t)
 				print(power)
 				mt = 900
