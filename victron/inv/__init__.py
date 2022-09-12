@@ -322,7 +322,8 @@ class InvControl(BusVars):
 
 	async def trigger(self, sleep=3):
 		await anyio.sleep(sleep)
-		await self._trigger.wait()
+		with anyio.move_on_after(5):
+			await self._trigger.wait()
 
 	i_batt_avg = None
 	async def _i_batt_task(self, evt):
