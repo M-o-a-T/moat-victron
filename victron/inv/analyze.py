@@ -11,6 +11,11 @@ class InvMode_Analyze(InvModeBase):
 	_mode = 5
 	_name = "analyze"
 
+	e_dis = None
+	e_chg = None
+	e_dis_c = 0
+	e_chg_d = 0
+
 	@property
 	def p_chg(self):
 		return self.intf.op.get("p_chg", 0)
@@ -49,31 +54,32 @@ class InvMode_Analyze(InvModeBase):
 		excess="Additional power to power to the grid if available / battery full. -1=unlimited",
 		balance="Time to hold the battery in top balancing. -1=do not balance.",
 		skip="Skip the first N processing steps.",
-		e_dis="Discharge energy, if step 4 is skipped.",
-		e_chg="Charge energy, if step 5 is skipped.",
+		e_dis="Discharge energy (Ws), if step 4 is skipped.",
+		e_chg="Charge energy (Ws), if step 5 is skipped.",
 		use_grid="power values refer to the grid, not the inverter.",
 		_l="""\
 This module analyzes your battery. This happens in several steps.
 
 * Top balance the battery: go to cell.u.ext.max and wait until all cells are "there".
-  Presumably the 
 
-  This step is optional and is skipped by default.
+  This step is optional.
 
 * Discharge until the top cell is at (2*u.lim.max-u.ext.max), i.e. somewhat below u.lim.max.
 
-* Charge to the "normal" maximum voltage (u.lim.max), as configured. Clear energy counters.
+* Charge until the top cell is at u.lim.max, as configured. Clear energy counters.
 
-* Discharge to u.lim.min. Save discharge energy measurement.
+* Discharge until the "bottom" cell is at u.lim.min. Save discharge energy measurement.
 
 * Charge back to u.lim.max. Save charge energy measurement.
 
 * Alert the nobel prize committee if the discharge value is larger than the charge value. ;-)
-  Otherwise, teach the BMS about these meter states so it can report a valid SoC.
+  Otherwise, configure the BMS so it can report a valid SoC.
 
 Battery charging and discharging uses the p_chg/p_dis values as inverter setpoints
-unless `use_grid` is set. Remember that positive values always mean "get this many W from
-there", so 'p_dis' must be negative when 'use_gid' is on, but positive when off.
+(unless `use_grid` is set, in which case they're grid setpoints).
+
+As positive values always mean "pull this many Watt from there", 'p_dis' must be
+negative when 'use_gid' is on, but positive when off.
 """,
 	)
 
@@ -120,7 +126,8 @@ there", so 'p_dis' must be negative when 'use_gid' is on, but positive when off.
 			await self.to_bottom()
 			e = (await intf.get_bms_work(poll=True, clear=True))[0]
 			i = await intf.get_bms_config()
-			self.e_dis = e["dis"] - e["chg"] * (1-i["batt"]["cap"]["loss"])
+			self.e_dis = e["dis"] #  - e["chg"] * (1-i["batt"]["cap"]["loss"])
+			self.e_chg_d = e["chg"]
 
 		# Step 4: re-charge to "normal" max
 		if skip:
@@ -132,13 +139,29 @@ there", so 'p_dis' must be negative when 'use_gid' is on, but positive when off.
 			await self.to_top(again=True)
 			e = (await intf.get_bms_work(poll=True, clear=True))[0]
 			i = await intf.get_bms_config()
-			self.e_chg = e["chg"] - e["dis"] / (1-i["batt"]["cap"]["loss"])
+			self.e_chg = e["chg"]
+			self.e_dis_c = e["dis"]
 
-		# step 5: set loss factor
-		# Should be a better approximation than the old one.
-		loss=1-(self.e_dis+1)/(self.e_chg+2)
+		# step 5: calculate loss factor and save to config
+		# 
+		# Solving the equation 'loss = 1 - dis / chg'
+		# with dis = dis_d - chg_d * (1-loss)   (*)
+		#  and chg = chg_c - dis_c / (1-loss)
+		# for 'loss' yields
+		loss = 1-(self.e_dis+self.e_dis_c)/(self.e_chg+self.e_chg_d +1)  # avoid div/0
+
+		# (*) We assume that charging and discharging doesn't go smoothly.
+		# Maybe there's some heavy clouds during charging by PV but we needed
+		# more power. Or vice versa, we're discharging at a constant rate during
+		# a rainy day but suddenly the sun comes out.
+		# Thus the actual charge and discharge sum needs to be corrected w/ the
+		# very loss factor we're measuring.
+		#
+		# dis_c == "discharge during charging". Likewise for the others.
+
 		inf=dict(
 			chg=self.e_chg, dis=self.e_dis,
+			chg_d=self.e_chg_d, dis_c=self.e_dis_c,
 			loss=loss
 		)
 		if loss < 0:
@@ -238,6 +261,12 @@ there", so 'p_dis' must be negative when 'use_gid' is on, but positive when off.
 				break
 			await self.set_p(power)
 
+	async def get_e(self):
+		intf = self.intf
+		e = (await intf.get_bms_work(poll=True))[0]
+		if self.e_dis is not None:
+			e.dis_now = self.e_dis
+		return e
 
 	async def to_bottom(self):
 		"""
@@ -254,7 +283,7 @@ there", so 'p_dis' must be negative when 'use_gid' is on, but positive when off.
 			umin = cfg_u["lim"]["min"]+(cfg_u["lim"]["min"]-cfg_u["ext"]["min"])/3
 
 			vt = (await intf.get_bms_voltages())[0]
-			e = (await intf.get_bms_work(poll=True))[0]
+			e = await self.get_e()
 			info = dict(
 				step="discharge",
 				min=vt["min_cell"], max=vt["max_cell"], e=e,
@@ -276,7 +305,7 @@ there", so 'p_dis' must be negative when 'use_gid' is on, but positive when off.
 
 	async def to_top(self, again=False):
 		"""
-		Take power until the top cell is at u.lim.max.
+		Take power until the bottom cell is somewhat below u.lim.max.
 		"""
 		intf = self.intf
 
@@ -289,7 +318,7 @@ there", so 'p_dis' must be negative when 'use_gid' is on, but positive when off.
 			umax = cfg_u["lim"]["max"]-(cfg_u["ext"]["max"]-cfg_u["lim"]["max"])/3
 
 			vt = (await intf.get_bms_voltages())[0]
-			e = (await intf.get_bms_work(poll=True))[0]
+			e = await self.get_e()
 			info = dict(
 				step="recharge" if again else "charge",
 				min=vt["min_cell"], max=vt["max_cell"], e=e,
