@@ -101,7 +101,7 @@ class InvControl(BusVars):
     #
 	# Max and min values are unsigned.
 	# 
-	# All power values refer to AC. All current values refer to DC.
+	# All power values (except for solar input) refer to AC. All current values refer to DC.
 	#
 	# The sum of all power/current values is zero by definition.
 	# Positive == power/current goes to your home  / DC bus.
@@ -124,8 +124,8 @@ class InvControl(BusVars):
 
 	pg_min = -12000  # watt we may send to the grid
 	pg_max = 12000  # watt we may take from the grid
-	inv_eff = 0.9  # inverter's min efficiency
-	p_per_phase = 4000  # inverter's max load per phase
+	inv_eff = 0.9  # inverter's typical efficiency
+	p_per_phase = 4500  # inverter's max load per phase
 	# TODO collect long term deltas
 
 	# protect battery against excessive discharge if PV current should suddenly
@@ -497,6 +497,7 @@ class InvControl(BusVars):
 		self._mode_task = None
 
 		name = "org.m-o-a-t.power.inverter"
+
 		async with InvInterface(self) as self._ctrl, \
 				   self.intf.service(name) as self._srv, \
 				   anyio.create_task_group() as self._tg:
