@@ -94,6 +94,8 @@ class InvControl(BusVars):
 
 	It can operate in various modes. Call `change_mode` to switch between them.
 	There's a mandatory 30 second delay so that things can settle down somewhat.
+
+	Configurable parameters ("system" group in `inv*.cfg`):
 	"""
 
 	#
@@ -138,6 +140,8 @@ class InvControl(BusVars):
 	# 
 	cap_scale = 4
 	#
+	# Approximate internal resistance of the battery pack.
+	# TODO should be autodetectable (dU/dI)
 	r_int=0.01
 	# Per-phase variables
 	# p_set_
@@ -154,6 +158,7 @@ class InvControl(BusVars):
 	#   The power other consumers are taking from the bus. Negative.
 	#
 
+	_mode = None
 	MODES = {}
 	@classmethod
 	def register(cls, target):
@@ -393,7 +398,6 @@ class InvControl(BusVars):
 
 		# self.mode = await srv.add_path("/Mode", 0, description="Controller mode", writeable=True, onchangecallback=self._change_mode, gettextcallback=self._mode_name)
 
-		self._mode = self.cfg.get("mode",0)
 		# await self.mode.set_value(self._mode)
 		self._mode_task = None
 		self._mode_task_stopped = anyio.Event()
@@ -404,7 +408,7 @@ class InvControl(BusVars):
 		await self.change_mode(value)
 
 	async def change_mode(self, mode:str, data={}):
-		if self._mode != mode:
+		if self._mode is None or self._mode != mode:
 			if self._change_mode_evt is None:
 				raise DBusError("org.m_o_a_t.inv.too_early", "try again later")
 			if mode not in self.MODES:
@@ -416,8 +420,10 @@ class InvControl(BusVars):
 				await self._mode_task_stopped.wait()
 			self._change_mode_evt.set()
 
-		# else TODO verify parameters for current mode
+		# TODO verify parameters for current mode
 		self.op.update(data)
+		for k,v in self.cfg["modes"].get(self._mode, {}).items():
+			self.op.setdefault(k,v)
 		return True
 
 	async def change_mode_param(self, param: str, value: Any) -> bool:
@@ -490,10 +496,10 @@ class InvControl(BusVars):
 			raise NotImplementedError(n)
 		return await self._batt_intf[n].call_set_capacity(cap, loss, top)
 
-	async def run(self):
+	async def run(self, mode=None):
 		self._change_mode_evt = anyio.Event()
 		self._change_mode_evt.set()
-		self._mode = 0
+		self._mode = mode or self.cfg["modes"]["default"]
 		self._mode_task = None
 
 		name = "org.m-o-a-t.power.inverter"

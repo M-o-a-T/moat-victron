@@ -58,8 +58,6 @@ async def main(debug, mode, no_op, param, config):
 		config.close()
 	else:
 		cfg = {}
-	if mode is not None:
-		cfg["mode"] = mode
 	op = cfg.setdefault("op",{})
 	op.setdefault("debug",1)
 	op["debug"] += debug
@@ -71,7 +69,7 @@ async def main(debug, mode, no_op, param, config):
 
 	async with MessageBus(bus_type=BusType.SYSTEM).connect() as bus, \
 	           InvControl(bus, cfg) as inv:
-		await inv.run()
+		await inv.run(mode)
 
 if __name__ == "__main__":
 	main(_anyio_backend="trio")
