@@ -116,6 +116,8 @@ class InvControl(BusVars):
 	# by less than this
 	p_step = 100
 
+	solar_p = 0  # current solar power yield
+
 	top_off = False  # go to the battery voltage limit?
 	umax_diff = 0.5  # distance to max voltage, when not topping off
 	umin_diff = 0.5  # distance to min voltage
@@ -452,8 +454,11 @@ class InvControl(BusVars):
 				while n < mt: # 15min
 					t += 1
 					n += 1
+					cur_p = 0
 					for chg in mon.get_service_list('com.victronenergy.solarcharger'):
-						power += (mon.get_value(chg, '/Yield/Power') or 0)
+						cur_p += (mon.get_value(chg, '/Yield/Power') or 0)
+					power += cur_p
+					self.solar_p = cur_p
 					await anyio.sleep_until(t)
 				print(power)
 				mt = 900
