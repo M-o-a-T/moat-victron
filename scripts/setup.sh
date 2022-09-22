@@ -27,6 +27,7 @@ opkg install \
 	python3-venv \
 	python3-modules \
 	python3-dev \
+	libsodium-dev \
 	coreutils \
 	findutils \
 	psmisc \
@@ -90,6 +91,7 @@ cd $d
 
 . env/bin/activate
 
+export SODIUM_INSTALL=system
 env/bin/pip3 install -r requirements.txt
 env/bin/pip3 install --upgrade pip
 
