@@ -249,7 +249,7 @@ class InvControl(BusVars):
 
 	@property
 	def batt_soc(self):
-		return self._batt_soc.value
+		return self._batt_soc.value / 100
 
 	@property
 	def i_batt(self):

@@ -13,7 +13,7 @@ class InvMode_SetSOC(InvModeBase):
 
 	@property
 	def dest_soc(self):
-		return self.intf.op.get("dest_soc", 0)
+		return self.intf.op.get("dest_soc", .50)
 
 	@property
 	def power_in(self):
@@ -56,13 +56,13 @@ Untested.
 
 			soc = intf.batt_soc
 			info = {"now":soc, "dest":self.dest_soc, "delta":soc-self.dest_soc}
-			if abs(soc-self.dest_soc)<0.3:
+			if abs(soc-self.dest_soc)<0.02:
 				info["delta"] = 0
 				ps = intf.calc_batt_i(0)
 			elif self.dest_soc > soc:  # want power
 				info["power"] = self.power_in
 				ps = intf.calc_grid_p(self.power_in, excess=self.excess)
-			else:  # send poert
+			else:  # send power
 				info["power"] = self.power_out
 				ps = intf.calc_grid_p(self.power_out, excess=self.excess)
 			intf.set_state("to_soc", info)
