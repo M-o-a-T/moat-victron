@@ -214,7 +214,7 @@ LABEL=RASPIBOOT   /opt/debian/boot/firmware vfat   noatime,rw  0 0
 _
 fi
 
-cd $ddeb/lib; for f in ld-*.so.* ; do test -e $dres/venus/lib/$f || ln -s /opt/debian/lib/$f $dres/venus/lib/ ; done
+cd $ddeb/lib; for f in ld-*.so.* ; do test -L $dres/venus/lib/$f || ln -s /opt/debian/lib/$f $dres/venus/lib/ ; done
 
 # enable i2c
 cd $dres/venus
