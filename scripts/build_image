@@ -201,9 +201,9 @@ if ! grep -qs RASPIROOT etc/fstab ; then
 cat >>etc/fstab <<_
 LABEL=RASPIROOT   /               btrfs   subvol=/venus,noatime,rw  0 1
 LABEL=RASPIROOT   /data           btrfs   subvol=/data,noatime,rw   0 2
-LABEL=RASPIBOOT   /boot/firmware  vfat    noatime,rw                0 0
+LABEL=RASPIFIRM   /boot/firmware  vfat    noatime,rw                0 0
 LABEL=RASPIROOT   /opt/debian     btrfs   subvol=/debian,noatime    0 2
-LABEL=RASPIBOOT   /opt/debian/boot/firmware vfat   noatime,rw  0 0
+LABEL=RASPIFIRM   /opt/debian/boot/firmware vfat   noatime,rw  0 0
 /proc             /opt/debian/proc            -   bind  0 0
 /sys              /opt/debian/sys             -   bind  0 0
 /dev              /opt/debian/dev             -   bind  0 0
@@ -216,8 +216,10 @@ fi
 
 cd $ddeb/lib; for f in ld-*.so.* ; do test -L $dres/venus/lib/$f || ln -s /opt/debian/lib/$f $dres/venus/lib/ ; done
 
-# enable i2c
 cd $dres/venus
+mkdir -p opt/debian boot/firmware
+
+# enable i2c
 fgrep -xqs i2c_dev etc/modules || echo i2c_dev >> etc/modules
 cd $dfirm
 grep -qs '^dtparam=i2c_arm=on' config.txt || echo dtparam=i2c_arm=on >>config.txt

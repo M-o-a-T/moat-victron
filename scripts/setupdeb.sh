@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 if ! test -d /opt/debian/bin ; then
 	echo "This script finalizes your Debian-plus-Victron installation." >&2
@@ -9,8 +10,10 @@ fi
 mkdir -p /usr/local/bin
 mkdir -p /usr/local/sbin
 
+test -x /usr/local/bin/btrfs && exit 0
+
 chroot /opt/debian apt-get update
-chroot /opt/debian apt-get install btrfs-progs
+chroot /opt/debian apt-get install -y btrfs-progs
 cat >/usr/local/bin/btrfs <<'_'
 
 #!/bin/sh

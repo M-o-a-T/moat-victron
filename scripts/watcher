@@ -1,0 +1,11 @@
+#!/bin/sh
+
+watch "\
+	dbus -y com.victronenergy.battery.batt /bms/0 GetVoltages 2>/dev/null;
+    dbus -y com.victronenergy.battery.batt /bms/0 GetCellVoltages 2>/dev/null;
+    dbus -y com.victronenergy.battery.batt /bms/0 GetBalancing 2>/dev/null;
+    dbus -y com.victronenergy.battery.batt /bms/0 GetTemperatures 2>/dev/null;
+    dbus -y org.m_o_a_t.inv.main /Control GetState 2>/dev/null;
+"
+
+

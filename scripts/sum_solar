@@ -7,7 +7,7 @@ import asyncclick as click
 
 from victron.dbus import Dbus
 from victron.dbus.monitor import DbusMonitor
-from moat.dbus import DbusInterface  # XXX move
+from victron.dbus.utils import DbusInterface  # XXX move
 from asyncdbus.service import method
 
 import logging
@@ -48,9 +48,9 @@ async def main(debug):
 		'com.victronenergy.vebus': {
 			'/Dc/0/Voltage': dummy,
 			'/Dc/0/Current': dummy,
-			'/Ac/ActiveIn/L1/Power': dummy,
-			'/Ac/ActiveIn/L2/Power': dummy,
-			'/Ac/ActiveIn/L3/Power': dummy,
+			'/Ac/ActiveIn/L1/P': dummy,
+			'/Ac/ActiveIn/L2/P': dummy,
+			'/Ac/ActiveIn/L3/P': dummy,
 			'/Hub/ChargeVoltage': dummy,
 			'/Hub4/L1/AcPowerSetpoint': dummy,
 			'/Hub4/L2/AcPowerSetpoint': dummy,
@@ -70,31 +70,51 @@ async def main(debug):
 			'/Ac/Grid/L1/Power': dummy,
 			'/Ac/Grid/L2/Power': dummy,
 			'/Ac/Grid/L3/Power': dummy,
+			'/Ac/ActiveIn/NumberOfPhases': dummy,
+
 		},
 	}
 
-	async with DbusMonitor(None, monitorlist, None) as d:
+	# ('com.victronenergy.system', '/Ac/Grid/L2/Power', {'code': None, 'whenToLog': 'configChange', 'accessLevel': None}, {'Value': 561.35498046875, 'Text': '561 W'}, 0)
+
+	def foo(sender, path, _x, value, _y):
+		return  # for debugging
+		if path == "/Info/MaxDischargeCurrent":
+			print(path,value)
+			return
+		if path == "/Io/AllowToDischarge":
+			print(path,value)
+			return
+
+	async with DbusMonitor(None, monitorlist, valueChangedCallback=foo) as d:
 		# logger.info("==configchange values==")
 		# logger.info(pprint.pformat(d.get_values(['configChange'])))
 
 		# logger.info("==onIntervalAlways and onIntervalOnlyWhenChanged==")
 		# logger.info(pprint.pformat(d.get_values(['onIntervalAlways', 'onIntervalAlwaysAndOnEvent'])))
 
+		syst='com.victronenergy.system'
+		phases = d.get_value(syst,'/Ac/ActiveIn/NumberOfPhases')
 		while True:
-			await anyio.sleep(1)
+			try:
+				await anyio.sleep(1)
 
-			# chargers
-			cur = 0
-			maxcur = 0
-			power = 0
-			nc = 0
-			cvol = 0
-			for chg in d.get_service_list('com.victronenergy.solarcharger'):
-				cvol += d.get_value(chg, '/Dc/0/Voltage')
-				nc += 1
-				cur += d.get_value(chg, '/Dc/0/Current')
-				maxcur += d.get_value(chg, '/Link/ChargeCurrent') or 0
-				power += d.get_value(chg, '/Yield/Power')
+				# chargers
+				cur = 0
+				maxcur = 0
+				power = 0
+				nc = 0
+				cvol = 0
+				for chg in d.get_service_list('com.victronenergy.solarcharger'):
+					cvol += d.get_value(chg, '/Dc/0/Voltage')
+					nc += 1
+					cur += d.get_value(chg, '/Dc/0/Current')
+					maxcur += d.get_value(chg, '/Link/ChargeCurrent') or 0
+					power += d.get_value(chg, '/Yield/Power')
+
+			except TypeError:
+				print("Incomplete data")
+				continue
 
 			# batteries
 			bvol = 0
@@ -105,6 +125,7 @@ async def main(debug):
 			okd = True
 			nb = 0
 			cv = 0
+			rd=0
 			for bat in d.get_service_list('com.victronenergy.battery'):
 				bvol += d.get_value(bat,'/Dc/0/Voltage')
 				nb += 1
@@ -114,30 +135,37 @@ async def main(debug):
 				cv = d.get_value(bat, '/Info/MaxChargeVoltage') or 0
 				okc = okc and d.get_value(bat,'/Io/AllowToCharge')
 				okd = okd and d.get_value(bat,'/Io/AllowToDischarge')
-			if bmaxc <= 0.1: okc = False
-			elif not okc: bmaxc = 0
-			if bmaxd <= 0.1: okd = False
-			elif not okd: bmaxd = 0
 
-			vebus = d.get_value('com.victronenergy.system','/VebusService')
+			vebus = d.get_value(syst,'/VebusService')
 			uv = d.get_value(vebus, '/Dc/0/Voltage')
 			iv = d.get_value(vebus, '/Dc/0/Current')
 			setp = []
 			curp = []
-			for i in range(3):
+			runp = []
+			for i in range(phases):
 				i += 1
 				setp.append(d.get_value(vebus, f'/Hub4/L{i}/AcPowerSetpoint'))
 				curp.append(d.get_value('com.victronenergy.system', f'/Ac/ActiveIn/L{i}/Power'))
+				runp.append(d.get_value(vebus, f'/Ac/ActiveIn/L{i}/P'))
 			try:
-				pp=[f'{a :5.0f}:{b-a :3.0f}' for a,b in zip(setp,curp)]
+				# goal / delta to actual / consumption between Multi and Grid
+				pp=[f'{a :5.0f}:{a-c :3.0f}/{b-c :3.0f}' for a,b,c in zip(setp,curp,runp)]
 			except TypeError:
-				pp=[f'{a}:{b}' for a,b in zip(setp,curp)]
+				pp=[f'{a}:{b}/{c}' for a,b,c in zip(setp,curp,runp)]
 
 			try:
 				cvol /= (nc or 1)
-				print(f"Sol U={cvol :5.2f}/{(cv-cvol)*1000 :4.0f} I={cur :6.2f} {maxcur :6.2f} {power :4.0f}  Bat U={bvol/(nb or 1) :5.2f} I={bcur :6.2f} {bmaxc :5.1f} {bmaxd :5.1f}  Inv U={uv :5.2f} I={iv :6.2f} P={' '.join(pp)}")
+				#rd += (bcur-cur-iv-rd)/100
+				cvd=cv-cvol
+				if abs(cvd)<1:
+					cvd=f"{cvd :+.2f}"
+					cvd=cvd[0]+cvd[2:]
+				else:
+					cvd=f"{cvd :+3.1f}"
+				print(f"{cvol :5.2f}{cvd}V  Sol {power :5.0f}W {cur :5.1f}A <{maxcur :3.0f}  Bat {bcur :5.1f}A {'>' if okd else '≫'}{-bmaxd :5.1f}{'<' if okc else '≪'}{bmaxc :5.1f}  Inv {iv :5.1f}A {' '.join(pp)}")
+				#print(f"{cvol :5.2f}{(cv-cvol) :+4.2f}V  Sol {power :5.0f}W {cur :5.1f}A <{maxcur :3.0f}  Bat {bcur :5.1f}A:{cur+iv:6.2f}:{rd:4.2f} {'>' if okd else '≫'}{-bmaxd :5.1f}{'<' if okc else '≪'}{bmaxc :5.1f}  Inv {iv :5.1f}A {' '.join(pp)}")
 			except TypeError:
-				print(f"Sol U={cvol} I={cur} {maxcur} {power}  Bat U={bvol/(nb or 1)} I={bcur} {bmaxc} {bmaxd}  Inv U={uv} I={iv} P={' '.join(pp)}")
+				print(f"U={cvol} {cv}  Sol I={cur} {maxcur} {power}  Bat I={bcur} {bmaxc} {bmaxd}  Inv I={iv} P={' '.join(pp)}")
 
 
 if __name__ == "__main__":

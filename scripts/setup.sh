@@ -27,6 +27,7 @@ opkg install \
 	python3-venv \
 	python3-modules \
 	python3-dev \
+	libsodium-dev \
 	coreutils \
 	findutils \
 	psmisc \
@@ -43,6 +44,8 @@ opkg install \
 	perl-module-time-local \
 
 
+mkdir -p /usr/local/bin
+
 if test -e .git && test -s ./scripts/setup.sh ; then
 	d=$(pwd)
 else
@@ -53,11 +56,18 @@ else
 	else
 		git clone https://github.com/M-o-a-T/moat-victron.git $d
 		cd $d
+		# don't update all of them
 		git submodule update --init bus
 		git submodule update --init deframed
+		git submodule update --init serial/twe_meter
 		cd $d/bus
 		git submodule update --init python/lib/serialpacker
 		git submodule update --init python/moat/util
+		git submodule update --init python/lib/micropython
+		git submodule update --init python/lib/micropython-lib
+		cd python/lib/micropython/mpy-cross
+		make
+		cp mpy-cross /usr/local/bin/
 		cd $d/deframed
 		git submodule update --init deframed/util
 		cd $d
@@ -81,8 +91,10 @@ cd $d
 
 . env/bin/activate
 
+export SODIUM_INSTALL=system
 env/bin/pip3 install -r requirements.txt
 env/bin/pip3 install --upgrade pip
 
 ./scripts/webstuff-dl $d
-exec ./scripts/setup2.sh $d
+./scripts/setup2.sh $d
+./scripts/setupdeb.sh

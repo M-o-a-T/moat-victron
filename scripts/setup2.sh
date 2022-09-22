@@ -1,11 +1,12 @@
 #!/bin/bash
 
-if test -z "$1" ; then
-	d="$(cd "$(dirname $0)"; pwd)"
+if test $# -eq 0 ; then
+	d=.
 else
 	d="$1"
 fi
 cd $d
+d=$(pwd)
 
 cp vimrc $HOME/.vimrc
 sed -e "s#:DIR:#$d#" < profile.sh > $HOME/.profile
@@ -30,9 +31,11 @@ _
 cp serial/udev.rules /etc/udev/rules.d/serial-starter-aux.rules
 
 echo "Patching. Might already be applied: if so, ignore the errors."
-for f in ../patches/systemcalc_dvcc_*.diff ; do
+
+for f in patches/systemcalc_dvcc_*.diff ; do
 	patch -p0 /opt/victronenergy/dbus-systemcalc-py/delegates/dvcc.py <$f
 done
+patch -p0 /opt/victronenergy/dbus-modbus-client/dbus-modbus-client.py <patches/dbus-modbus-meters.py
 
 set +x
 echo OK, all done.

@@ -219,7 +219,7 @@ def wrap_dbus_value(value):
 		return Variant('s', value)
 	if isinstance(value, (bytes,bytearray)):
 		return Variant('ay', value)
-	if isinstance(value, list):
+	if isinstance(value, (list, tuple)):
 		if len(value) == 0:
 			# If the list is empty we cannot infer the type of the contents. So assume unsigned integer.
 			# A (signed) integer is dangerous, because an empty list of signed integers is used to encode
@@ -232,6 +232,10 @@ def wrap_dbus_value(value):
 		return Variant('a{sv}', {k: wrap_dbus_value(v) for k, v in value.items()})
 	raise ValueError("No idea how to encode %r (%s)" % (value,type(value).__name__))
 
+
+def unwrap_dbus_dict(value):
+	"""as unwrap_dbus_value but doesn't unwrap the dict itself"""
+	return { str(k): unwrap_dbus_value(v) for k,v in value.items() }
 
 def unwrap_dbus_value(val):
 	"""Unwraps values wrapped in Variant objects."""
