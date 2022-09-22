@@ -5,7 +5,12 @@ import os
 import anyio
 import asyncclick as click
 import ast
-import ruyaml
+try:
+	from moat.util import yload
+except ImportError:
+	import ruyaml
+	yaml = ruyaml.YAML()
+	yload = yaml.load
 
 from victron.dbus import Dbus
 from victron.dbus.monitor import DbusMonitor
@@ -53,8 +58,7 @@ async def main(debug, mode, no_op, param, config):
 	sys.path.insert(1, "/data/moat/bus/python")
 
 	if config:
-		yaml = ruyaml.YAML()
-		cfg = yaml.load(config)
+		cfg = yload(config)
 		config.close()
 	else:
 		cfg = {}

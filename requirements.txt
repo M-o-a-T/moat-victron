@@ -14,3 +14,4 @@ pymodbus>=3.0.0.dev
 prompt_toolkit
 pygments
 pynacl
+moat-util
