@@ -158,6 +158,10 @@ class InvControl(BusVars):
 	#   The power other consumers are taking from the bus. Negative.
 	#
 
+	# distkv
+	_dkv = None
+	_dkv_evt = None
+
 	_mode = None
 	MODES = {}
 	@classmethod
@@ -214,6 +218,7 @@ class InvControl(BusVars):
 				setattr(self,k,v)
 
 		self._trigger = anyio.Event()
+		self._dkv_evt = anyio.Event()
 		self.clear_state()
 	
 	def clear_state(self):
@@ -383,6 +388,8 @@ class InvControl(BusVars):
 		evt = anyio.Event()
 		self._tg.start_soon(self._i_batt_task, evt)
 		self._tg.start_soon(self._avg_task)
+		self._tg.start_soon(self._distkv_main)
+
 		await srv.add_mandatory_paths(
 			processname=__file__,
 			processversion="0.1",
@@ -453,6 +460,7 @@ class InvControl(BusVars):
 		async with DbusMonitor(self._bus, self.MON) as mon:
 			power = 0
 			t = anyio.current_time()
+			t_sol = t+5
 			mt = (min(time_until((n,"min")) for n in range(0,60,15)) - datetime.now()).seconds
 			print(mt)
 			while True:
@@ -465,9 +473,39 @@ class InvControl(BusVars):
 						cur_p += (mon.get_value(chg, '/Yield/Power') or 0)
 					power += cur_p
 					self.solar_p = cur_p
+					if t >= t_sol:
+						dkv = await self.distkv
+						if dkv:
+							await dkv.set(self.distkv_prefix / "solar" / "p", cur_p)
+						t_sol=t+10
 					await anyio.sleep_until(t)
 				print(power)
 				mt = 900
+
+	async def _distkv_main(self):
+		if "distkv" not in self.cfg:
+			self._dkv_evt.set()
+			self._dkv_evt = None
+			return
+
+		# TODO use a service scope instead
+		from distkv.client import open_client as distkv_client
+		try:
+			async with distkv_client(**self.cfg["distkv"]) as dkv:
+				self._dkv = dkv
+				self.distkv_prefix = self.cfg["distkv"]["root"]
+				self._dkv_evt.set()
+				while True:
+					await anyio.sleep(99999)
+		finally:
+			self._dkv = None
+
+	@property
+	async def distkv(self):
+		if self._dkv_evt is None:
+			return False
+		await self._dkv_evt.wait()
+		return self._dkv
 
 	async def _init_intf(self):
 		proxy = await self._bus.get_proxy_object(self.s_battery.value, "/bms")
