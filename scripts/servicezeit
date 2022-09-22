@@ -1,0 +1,157 @@
+#!/usr/bin/python3
+
+import anyio
+import asyncclick as click
+
+from moat.util import yload, combine_dict, to_attrdict, P
+
+from moat.modbus.server import ModbusServer
+from moat.modbus.types import InputRegisters, HoldingRegisters
+from moat.modbus.types import IntValue, SwappedLongValue
+
+from distkv.client import open_client as distkv_client
+
+import logging
+logger = logging.getLogger("szeit")
+
+CFG = dict(
+    modbus=dict(
+        listen="localhost",
+        port=502,
+    ),
+    distkv=dict(
+        root=P("grid.s.roof"),
+        connect=dict(
+            #auth="password name=user password=sekkrit",
+            host="localhost",
+            port=27586,
+            ssl=False,
+        ),
+    ),
+)
+
+@click.command
+@click.option("-c","--config", type=click.File("r"), help="config file")
+@click.option("-d","--debug", is_flag=True, help="debug me?")
+async def run(config, debug):
+    """ 
+    A Modbus server for the ServiceZeit/IntegraSun interconnect.
+    Implements "integrasun Datenpunktliste Modbus kurz".
+    """
+    logging.basicConfig(level=logging.DEBUG if debug else logging.WARNING)
+
+    cfg = yload(config) if config else {}
+    cfg = to_attrdict(combine_dict(cfg, CFG))
+
+    async with ModbusServer(address=cfg.modbus.listen, port=cfg.modbus.port) as srv:
+        unit = srv.add_unit(1)
+        await Server(unit, cfg).run()
+
+class Server:
+    def __init__(self, unit, cfg):
+        self.unit = unit
+        self.cfg = cfg
+        self.name = "szeit"
+        self.online_wait = anyio.Event()
+        self.got_online = False
+        self.limit_other = 1.0
+        self._limits = {}
+
+        self.max_p = unit.add(HoldingRegisters,0,SwappedLongValue)
+        self.max_pct = unit.add(HoldingRegisters,2,IntValue)
+
+        self.grid_now = unit.add(InputRegisters, 0, SwappedLongValue(0))
+        self.is_online = unit.add(InputRegisters, 2, IntValue(0))
+        self.grid_max = unit.add(InputRegisters, 3, SwappedLongValue(0))
+        self.grid_ref = unit.add(InputRegisters, 5, SwappedLongValue(0))
+        unit.add(InputRegisters, 7, self.grid_now)
+
+    async def run(self):
+        async with distkv_client(**self.cfg.distkv) as self.dkv, anyio.create_task_group() as tg:
+            tg.start_soon(self.relay_pct)  # holding 0-2
+            tg.start_soon(self.watchdog)  # holding 3
+            tg.start_soon(self.relay_moment)  # input 0
+            tg.start_soon(self.relay_online)  # input 2
+            tg.start_soon(self.relay_online_wait)  # input 2
+            tg.start_soon(self.relay_avail)  # input 3
+            tg.start_soon(self.relay_max)  # input 5
+            tg.start_soon(self.relay_limits)  # input 5
+
+    async def relay_limits(self):
+        """Read limit states from distkv"""
+        async with self.dkv.watch(self.cfg.root/"solar"/"limit", fetch=True) as mon:
+            async for msg in mon:
+                if "value" in msg:
+                    n = msg.path[-1]
+                    if n == self.name:
+                        continue
+                    if msg.value is None:
+                        self._limits.pop(n, None)
+                    else:
+                        self._limits[n] = msg.value
+                    self.limit_other = min(self._limits.values(), default=1)
+
+    async def relay_online_wait(self):
+        """watch that we get frequent grid power updates"""
+        while True:
+            with anyio.move_on_after(60):
+                await self.online_wait.wait()
+
+                # if we get here we're online
+                self.online_wait = anyio.Event()
+                if self.got_online and not self.is_online.value:
+                    logger.debug("all OK, going online")
+                    self.is_online.value = 1
+                continue
+
+            # if we're here we're offline
+            if self.is_online.value:
+                logger.warning("No power update for 60sec, going offline")
+                self.is_online.value = 0
+
+
+    async def relay_online(self):
+        """Forward current online state to modbus"""
+        async with self.dkv.watch(self.cfg.root/"solar"/"online", fetch=True) as mon:
+            async for msg in mon:
+                if "value" in msg:
+                    self.got_online = msg.value
+                    if not msg.value:
+                        self.is_online.value = 0
+                    # otherwise relay_online_wait() does this
+
+    async def relay_moment(self):
+        """Forward current power output to modbus"""
+        async with self.dkv.watch(self.cfg.root/"solar"/"cur", fetch=True) as mon:
+            async for msg in mon:
+                if "value" in msg:
+                    self.grid_now.value = msg.value
+                    self.online_wait.set()
+
+    async def relay_max(self):
+        async with self.dkv.watch(self.cfg.root/"solar"/"ref", fetch=True) as mon:
+            async for msg in mon:
+                if "value" in msg:
+                    self.grid_ref.value = msg.value * self.limit_other
+
+    async def relay_avail(self):
+        async with self.dkv.watch(self.cfg.root/"solar"/"max", fetch=True) as mon:
+            async for msg in mon:
+                if "value" in msg:
+                    self.grid_max.value = msg.value
+
+    async def relay_pct(self):
+        """Forward allowed power output from modbus"""
+        async for p in self.max_pct:
+            await self.dkv.set(self.cfg.root/"solar"/"limit"/self.name, p/10000)
+
+    async def watchdog(self):
+        wd = self.unit.add(HoldingRegisters,3,IntValue(0))
+        while True:
+            for x in range(65536):
+                wd.value = x
+                await anyio.sleep(0.25)
+    
+
+if __name__ == "__main__":
+    run(_anyio_backend="trio")
