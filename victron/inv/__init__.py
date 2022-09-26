@@ -174,6 +174,7 @@ class InvControl(BusVars):
 	MON = {
 		'com.victronenergy.solarcharger': {
 			'/Yield/Power': _dummy,
+			'/CustomName': _dummy,
 		},
 	}
 
@@ -463,6 +464,7 @@ class InvControl(BusVars):
 			t_sol = t+5
 			mt = (min(time_until((n,"min")) for n in range(0,60,15)) - datetime.now()).seconds
 			print(mt)
+			dkv = await self.distkv
 			while True:
 				n = 0
 				while n < mt: # 15min
@@ -474,9 +476,17 @@ class InvControl(BusVars):
 					power += cur_p
 					self.solar_p = cur_p
 					if t >= t_sol:
-						dkv = await self.distkv
 						if dkv:
-							await dkv.set(self.distkv_prefix / "solar" / "p", cur_p)
+							for chg in mon.get_service_list('com.victronenergy.solarcharger'):
+								name = mon.get_value(chg, '/CustomName')
+								ni = name.find(" : ")
+								if ni >= 0:
+									name = name[ni+3:]
+								pp = (mon.get_value(chg, '/Yield/Power') or 0)
+								await dkv.set(self.distkv_prefix / "solar" / "p" / name, pp, idem=True)
+							await dkv.set(self.distkv_prefix / "solar" / "p", cur_p, idem=True)
+							await dkv.set(self.distkv_prefix / "solar" / "batt_pct", self.batt_soc, idem=True)
+							await dkv.set(self.distkv_prefix / "solar" / "grid", self.p_grid, idem=True)
 						t_sol=t+10
 					await anyio.sleep_until(t)
 				print(power)
