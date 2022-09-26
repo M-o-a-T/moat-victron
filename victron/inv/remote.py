@@ -21,6 +21,14 @@ class InvMode_Remote(InvModeBase):
 		return p
 
 	@property
+	def power_override(self):
+		ip = self.intf.op.get("power_override", None)
+		if ip is not None and ip == -1:
+			del self.intf.op["power_override"]
+			ip = None
+		return ip
+
+	@property
 	def power_low(self):
 		p = self.intf.op.get("power_low", 0)
 		p = max(0, p)
@@ -87,6 +95,7 @@ class InvMode_Remote(InvModeBase):
 
 	_doc = dict(
 		power="Max power to send to the grid",
+		power_override="Inverter power. Set to -1 to disable.",
 		low_grid="Do grid zero?",
 		soc_low_zero="SoC lower? stop the inverter",
 		soc_low="SoC lower? start grid-only mode",
@@ -113,6 +122,11 @@ unlikely to work the way you want them to.
 
 External power is constrained by the "limit" value, which must be between 0 and 1.
 If DistKV is active, this value is the minimum of the available "limit" sub-entries.
+
+If @power_override is set, its value controls the inverter power directly.
+This is intended to shut down the system at night / in low-battery situations.
+DO NOT use this setting to feed energy to the grid. In other words, the value
+should not be positive. Set to -1 to delete.
 """,
 	)
 
@@ -242,6 +256,9 @@ If DistKV is active, this value is the minimum of the available "limit" sub-entr
 
 			if dkv:
 				await dkv.set(intf.distkv_prefix/"solar"/"cur", max(0,-intf.p_grid))
+			ipn = self.power_override
+			if ipn is not None:
+				ip = ipn
 			if ip is None:
 				if dkv:
 					await dkv.set(intf.distkv_prefix/"solar"/"max", p)
