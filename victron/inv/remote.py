@@ -150,10 +150,10 @@ should not be positive. Set to -1 to delete.
 
 				dkv = await intf.distkv
 				if dkv:
-					await dkv.set(intf.distkv_prefix/"solar"/"online", True)
+					await dkv.set(intf.distkv_prefix/"solar"/"online", True, idem=True)
 		finally:
 			if dkv:
-				await dkv.set(intf.distkv_prefix/"solar"/"online", False)
+				await dkv.set(intf.distkv_prefix/"solar"/"online", False, idem=True)
 
 
 	async def _dkv_mon_l(self, evt):
@@ -261,16 +261,16 @@ should not be positive. Set to -1 to delete.
 				ip = ipn
 			if ip is None:
 				if dkv:
-					await dkv.set(intf.distkv_prefix/"solar"/"max", p)
-					await dkv.set(intf.distkv_prefix/"solar"/"ref", p)
+					await dkv.set(intf.distkv_prefix/"solar"/"max", p, idem=True)
+					await dkv.set(intf.distkv_prefix/"solar"/"ref", p, idem=True)
 				if self._limit is not None:
 					p *= self._limit
 				state.p_real = p
 				ps = intf.calc_grid_p(-p, excess=0)
 			else:
 				if dkv:
-					await dkv.set(intf.distkv_prefix/"solar"/"max", 0)
-					await dkv.set(intf.distkv_prefix/"solar"/"ref", 0)
+					await dkv.set(intf.distkv_prefix/"solar"/"max", 0, idem=True)
+					await dkv.set(intf.distkv_prefix/"solar"/"ref", 0, idem=True)
 				ps = intf.calc_inv_p(ip, excess=0)
 
 			logger.debug("P: %s - IP: %s = %s", p, ip, ps)
