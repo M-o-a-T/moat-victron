@@ -1,0 +1,12 @@
+reorganize moat.* code
+implement error conditions
+disable if ESS mode != 3
+modularize control (DistKV vs. DBus)
+disable inverter on low battery
+adjust voltages by internal resistance
+auto-discover internal resistance 
+use a sigma function for approximating stable points
+add a longer-term amperage averager for the battery
+Add a mode "below 1" that keeps the battery charged
+
+implement meter parameter file, forward to MQTT and distkv, then to Victron
