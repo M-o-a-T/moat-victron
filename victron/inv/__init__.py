@@ -448,6 +448,7 @@ class InvControl(BusVars):
 				m = self.MODES[self._mode]
 				self.clear_state()
 				self.set_state("mode", [m._name, self.op])
+				self.op.update(self.cfg["modes"].get(self._mode, {}))
 				await m(self).run()
 		finally:
 			logger.debug("MODE STOP %s", m._name)
