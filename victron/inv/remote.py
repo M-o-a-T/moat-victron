@@ -95,6 +95,7 @@ class InvMode_Remote(InvModeBase):
 
 	_doc = dict(
 		power="Max power to send to the grid",
+		power_low="Power for charging, if the battery is empty",
 		power_override="Inverter power. Set to -1 to disable.",
 		low_grid="Do grid zero?",
 		soc_low_zero="SoC lower? stop the inverter",

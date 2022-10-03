@@ -1,0 +1,18 @@
+[push]
+        default = nothing
+        followTags = true
+        recurseSubmodules = check
+        #default = simple
+[diff]
+        relative = True
+        noprefix = True
+[alias]
+        ls = ls-files 
+        lso = ls-files --others --exclude-standard
+        lsd = ! git --no-pager diff --cached --name-only && git --no-pager ls-files --modified
+[pull]
+        rebase = false
+[init]
+        defaultBranch = main
+[safe]
+        directory = *
