@@ -21,6 +21,13 @@ class InvMode_Remote(InvModeBase):
 		return p
 
 	@property
+	def power_ref(self):
+		p = self.intf.op.get("power_ref", 0)
+		p = max(0, p)
+		self.intf.op["power_ref"] = p
+		return p
+
+	@property
 	def power_override(self):
 		ip = self.intf.op.get("power_override", None)
 		if ip is not None and ip == -1:
@@ -96,6 +103,7 @@ class InvMode_Remote(InvModeBase):
 	_doc = dict(
 		power="Max power to send to the grid",
 		power_low="Power for charging, if the battery is empty",
+		power_ref="Reference power, reported to energy marketing provider",
 		power_override="Inverter power. Set to -1 to disable.",
 		low_grid="Do grid zero?",
 		soc_low_zero="SoC lower? stop the inverter",
@@ -257,13 +265,13 @@ should not be positive. Set to -1 to delete.
 
 			if dkv:
 				await dkv.set(intf.distkv_prefix/"solar"/"cur", max(0,-intf.p_grid))
+				await dkv.set(intf.distkv_prefix/"solar"/"ref", self.power_ref, idem=True)
 			ipn = self.power_override
 			if ipn is not None:
 				ip = ipn
 			if ip is None:
 				if dkv:
 					await dkv.set(intf.distkv_prefix/"solar"/"max", p, idem=True)
-					await dkv.set(intf.distkv_prefix/"solar"/"ref", p, idem=True)
 				if self._limit is not None:
 					p *= self._limit
 				state.p_real = p
@@ -271,7 +279,6 @@ should not be positive. Set to -1 to delete.
 			else:
 				if dkv:
 					await dkv.set(intf.distkv_prefix/"solar"/"max", 0, idem=True)
-					await dkv.set(intf.distkv_prefix/"solar"/"ref", 0, idem=True)
 				ps = intf.calc_inv_p(ip, excess=0)
 
 			logger.debug("P: %s - IP: %s = %s", p, ip, ps)
