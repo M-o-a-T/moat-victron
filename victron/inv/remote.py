@@ -105,6 +105,7 @@ class InvMode_Remote(InvModeBase):
 		power_low="Power for charging, if the battery is empty",
 		power_ref="Reference power, reported to energy marketing provider",
 		power_override="Inverter power. Set to -1 to disable.",
+		limit="Limit factor. Must be [0…1].",
 		low_grid="Do grid zero?",
 		soc_low_zero="SoC lower? stop the inverter",
 		soc_low="SoC lower? start grid-only mode",
