@@ -273,10 +273,12 @@ should not be positive. Set to -1 to delete.
 			if ip is None:
 				if dkv:
 					await dkv.set(intf.distkv_prefix/"solar"/"max", p, idem=True)
+				exc = self.power_ref-p
 				if self._limit is not None:
 					p *= self._limit
+					exc *= self._limit
 				state.p_real = p
-				ps = intf.calc_grid_p(-p, excess=0)
+				ps = intf.calc_grid_p(-p, excess=exc)
 			else:
 				if dkv:
 					await dkv.set(intf.distkv_prefix/"solar"/"max", 0, idem=True)
