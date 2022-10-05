@@ -1,12 +1,15 @@
 reorganize moat.* code
-implement error conditions
+integrate moat.bms.sched
+implement battery error conditions
 disable if ESS mode != 3
 modularize control (DistKV vs. DBus)
 disable inverter on low battery
 adjust voltages by internal resistance
-auto-discover internal resistance 
+auto-discover battery and cell internal resistance 
 use a sigma function for approximating stable points
 add a longer-term amperage averager for the battery
-Add a mode "below 1" that keeps the battery charged
+add inverter-amperage mode (i.e. if I=0, take the energy
+for Multiplus + EXT from AC)
+Fix battery-amperage mode
 
 implement meter parameter file, forward to MQTT and distkv, then to Victron
