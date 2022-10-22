@@ -733,22 +733,6 @@ class InvControl(BusVars):
 		# Now check some AC limits.
 		p = self.p_from_i(i_inv)
 
-		# Don't exceed what we're allowed to feed to the grid.
-		if excess is None:
-			no_lims.append({"rule":"P_EXC", "exc":"-"})
-		else:
-			lim=dict(
-				rule="P_EXC",
-				lim="p>op+exc, p>0",
-				p=p,op=op,exc=excess,
-			)
-			if p>0 and p > op+excess:
-				lim["fix"] = "p=op+exc"
-				lim["res"] = p = op+excess
-				lims.append(lim)
-			else:
-				no_lims.append(lim)
-
 		# Don't overload the charger.
 		lim = dict(
 			rule="P_MIN",
@@ -827,9 +811,24 @@ class InvControl(BusVars):
 			lim["res"] = {"batt": i_batt, "inv": i_inv}
 		# no add to no_lims because it's too obvious
 
-
 		# back to the AC side
 		p = self.p_from_i(i_inv)
+
+		# Don't exceed what we're allowed to feed to the grid.
+		if excess is None:
+			no_lims.append({"rule":"P_EXC", "exc":"-"})
+		else:
+			lim=dict(
+				rule="P_EXC",
+				lim="p>op+exc, p>0",
+				p=p,op=op,exc=excess,
+			)
+			if p > 0 and p > op+excess:
+				lim["fix"] = "p=op+exc"
+				lim["res"] = p = op+excess
+				lims.append(lim)
+			else:
+				no_lims.append(lim)
 
 		# This part ensures that we don't take too-huge steps towards
 		# the new value, which would cause instabilities.
