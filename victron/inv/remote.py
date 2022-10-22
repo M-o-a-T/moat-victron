@@ -278,8 +278,22 @@ should not be positive. Set to -1 to delete.
 					p *= self._limit
 					exc *= self._limit
 				state.p_real = p
+				state.exc = exc
+				try:
+					del state.p_i
+				except AttributeError:
+					pass
 				ps = intf.calc_grid_p(-p, excess=exc)
 			else:
+				state.p_i = ip
+				try:
+					del state.p_real
+				except AttributeError:
+					pass
+				try:
+					del state.exc
+				except AttributeError:
+					pass
 				if dkv:
 					await dkv.set(intf.distkv_prefix/"solar"/"max", 0, idem=True)
 				ps = intf.calc_inv_p(ip, excess=0)
