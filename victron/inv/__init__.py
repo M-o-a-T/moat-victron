@@ -117,6 +117,8 @@ class InvControl(BusVars):
 	# the system has mostly settled down if the charger/inverter load changes
 	# by less than this
 	p_step = 100
+	# if the SoC is more than f_delta away from 0/1, don't bother either
+	f_delta = 0.2
 
 	solar_p = 0  # current solar power yield
 
@@ -839,8 +841,9 @@ class InvControl(BusVars):
 
 		# This part ensures that we don't take too-huge steps towards
 		# the new value, which would cause instabilities.
-		if self.small_p_step(self.last_p, p):
-			# Small(ish) change from last target. Implement directly.
+		if self.f_delta <= self.batt_soc <= 1-self.f_delta or self.small_p_step(self.last_p, p):
+			# Small(ish) change from last target, or far enough away from SoC bounds not to care.
+			# Implement directly.
 			np = p
 			self.step = 1
 		else:
