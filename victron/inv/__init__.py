@@ -461,11 +461,15 @@ class InvControl(BusVars):
 	async def _solar_log(self):
 		async with DbusMonitor(self._bus, self.MON) as mon:
 			power = 0
+			dkv = await self.distkv
+			if dkv:
+				val = await dkv.get(self.distkv_prefix / "solar" / "energy")
+				if val and "value" in val:
+					power = val.value
 			t = anyio.current_time()
 			t_sol = t+5
 			mt = (min(time_until((n,"min")) for n in range(0,60,15)) - datetime.now()).seconds
 			print(mt)
-			dkv = await self.distkv
 			while True:
 				n = 0
 				while n < mt: # 15min
@@ -491,6 +495,9 @@ class InvControl(BusVars):
 						t_sol=t+10
 					await anyio.sleep_until(t)
 				print(power)
+				if dkv:
+					await dkv.set(self.distkv_prefix / "solar" / "energy", power, idem=True)
+
 				mt = 900
 
 	async def _distkv_main(self):
