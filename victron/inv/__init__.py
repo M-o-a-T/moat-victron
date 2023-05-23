@@ -158,6 +158,9 @@ class InvControl(BusVars):
 	# p_cons_
 	#   System, /Ac/Consumption/L{i}/Power
 	#   The power other consumers are taking from the bus. Negative.
+	# p_crit_
+	#   System, /Ac/ConsumptionOnOutput/L{i}/Power
+	#   The power critical consumers are taking from the Multiplus. Negative.
 	#
 
 	# distkv
@@ -191,6 +194,9 @@ class InvControl(BusVars):
 			_p_cons1 = '/Ac/Consumption/L1/Power',
 			_p_cons2 = '/Ac/Consumption/L2/Power',
 			_p_cons3 = '/Ac/Consumption/L3/Power',
+			_p_crit1 = '/Ac/ConsumptionOnOutput/L1/Power',
+			_p_crit2 = '/Ac/ConsumptionOnOutput/L2/Power',
+			_p_crit3 = '/Ac/ConsumptionOnOutput/L3/Power',
 			_p_grid1 = '/Ac/Grid/L1/Power',
 			_p_grid2 = '/Ac/Grid/L2/Power',
 			_p_grid3 = '/Ac/Grid/L3/Power',
@@ -238,12 +244,14 @@ class InvControl(BusVars):
 		async with super()._ctx():
 			self.p_grid_ = []
 			self.p_cons_ = []
+			self.p_crit_ = []
 			self.p_cur_ = []
 
 			for i in range(self.n_phase):
 				i += 1
 				self.p_grid_.append(await self.intf.importer('com.victronenergy.system', f'/Ac/Grid/L{i}/Power'))
 				self.p_cons_.append(await self.intf.importer('com.victronenergy.system', f'/Ac/Consumption/L{i}/Power'))
+				self.p_crit_.append(await self.intf.importer('com.victronenergy.system', f'/Ac/ConsumptionOnOutput/L{i}/Power'))
 				self.p_cur_.append(await self.intf.importer('com.victronenergy.system', f'/Ac/ActiveIn/L{i}/Power'))
 			self.load = [0] * self.n_phase
 
@@ -284,6 +292,13 @@ class InvControl(BusVars):
 		Power from other AC consumers, between this inverter and the home meter.
 		"""
 		return -sum(x.value for x in self.p_cons_)
+
+	@property
+	def p_crit(self):
+		"""
+		Power from other AC consumers, between this inverter and the home meter.
+		"""
+		return -sum(x.value for x in self.p_crit_)
 
 	@property
 	def p_grid(self):
@@ -880,7 +895,11 @@ class InvControl(BusVars):
 			ps[phase-1 if phase else 0] = np
 		p_info["inv_phases"] = ps
 		self.set_state("inverter", p_info)
-		return ps
+
+                # The return value is the inverter output, which needs
+                # to be adjusted for loads connected to it
+
+		return [ a-b.value for a,b in zip(ps, self.p_crit_) ]
 
 	def small_p_step(self, p, q):
 		if abs(p-q) < self.p_step:
