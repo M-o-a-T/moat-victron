@@ -75,28 +75,28 @@ class InvMode_Remote(InvModeBase):
 	@property
 	def soc_low(self):
 		p = self.intf.op.get("soc_low", .20)
-		p = min(max(p, .10), .80)
+		p = min(max(p, .10), .90)
 		self.intf.op["soc_low"] = p
 		return p
 
 	@property
 	def soc_low_ok(self):
 		p = self.intf.op.get("soc_low_ok", 0)
-		p = min(max(p, self.soc_low+.02), .85)
+		p = min(max(p, self.soc_low+.02), self.soc_high-.02)
 		self.intf.op["soc_low_ok"] = p
 		return p
 
 	@property
 	def soc_high(self):
 		p = self.intf.op.get("soc_high", .90)
-		p = max(min(p, .97), self.soc_low+.10)
+		p = max(min(p, .97), self.soc_low+.05)
 		self.intf.op["soc_high"] = p
 		return p
 
 	@property
 	def soc_high_ok(self):
 		p = self.intf.op.get("soc_high_ok", .85)
-		p = max(min(p, .95), self.soc_high-.02, self.soc_low+.05)
+		p = max(min(p, .95, self.soc_high-.02), self.soc_low+.02)
 		self.intf.op["soc_high_ok"] = p
 		return p
 
