@@ -395,7 +395,10 @@ class DbusItemImport(object):
 			self._exists = False
 			raise
 		else:
-			self._cachedvalue = v.value
+			if v.signature == "ai" and not v.value:
+				self._cachedvalue = None
+			else:
+				self._cachedvalue = v.value
 			self._exists = True
 
 	## Returns the path as a string, for example '/AC/L1/V'
