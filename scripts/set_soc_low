@@ -1,0 +1,21 @@
+#!/bin/sh -ex
+
+b=$1
+a=$(($1 + 2))
+c=$(($1 - 2))
+test $a -lt 99
+test $c -gt 5
+
+if test $c -gt 40 ; then 
+	dbus -y org.m_o_a_t.inv.main /Control SetModeParam power_low %0
+else
+	dbus -y org.m_o_a_t.inv.main /Control SetModeParam power_low %120
+fi
+a=$(printf 0.%02d $a)
+b=$(printf 0.%02d $b)
+c=$(printf 0.%02d $c)
+dbus -y org.m_o_a_t.inv.main /Control SetModeParam soc_low %$b
+dbus -y org.m_o_a_t.inv.main /Control SetModeParam soc_low_ok %$a
+dbus -y org.m_o_a_t.inv.main /Control SetModeParam soc_low_zero %$c  ## $c
+dbus -y org.m_o_a_t.inv.main /Control SetModeParam low_grid %False
+

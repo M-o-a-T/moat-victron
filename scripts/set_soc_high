@@ -1,0 +1,14 @@
+#!/bin/sh -ex
+
+a=$1
+c=$(($1 - 2))
+
+test $a -lt 99
+test $c -gt 15
+
+a=$(printf 0.%02d $a)
+c=$(printf 0.%02d $c)
+
+dbus -y org.m_o_a_t.inv.main /Control SetModeParam soc_high %$a
+dbus -y org.m_o_a_t.inv.main /Control SetModeParam soc_high_ok %$c
+
