@@ -1,0 +1,7 @@
+# screenrc
+zombie qr
+screen -r w scripts/watcher
+screen -r s scripts/sum_solar
+screen -r sh /bin/bash -i
+screen -r inv scripts/inv_control -c configs/inv.cfg -d -m remote
+#screen -r moat scripts/mpy-moat -v -c /data/moat/serial/moat.ttyACM0.cfg -p /dev/ttyACM0 mplex

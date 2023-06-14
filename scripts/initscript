@@ -1,0 +1,8 @@
+#!/bin/sh
+export HOME=/data/moat
+cd $HOME
+. env_v/bin/activate
+
+screen -d -m -c ./screenrc
+sleep 10
+dbus -y org.m_o_a_t.inv.main /Control SetModeParam power_override %0
