@@ -40,9 +40,9 @@ class BusVars(CtxObj):
 	@asynccontextmanager
 	async def _ctx(self):
 		async with Dbus(self._bus) as self._intf:
-			for k,v in self.VARS_RO.items():
-				for n,p in v.items():
-					setattr(self,n, (await self._intf.importer(k,p, createsignal=False)).value)
+#			for k,v in self.VARS_RO.items():
+#				for n,p in v.items():
+#					setattr(self,n, (await self._intf.importer(k,p, createsignal=False)).value)
 			for k,v in self.VARS.items():
 				for n,p in v.items():
 					setattr(self,n, await self._intf.importer(k,p))
@@ -201,10 +201,6 @@ class InvControl(BusVars):
 			_p_grid2 = '/Ac/Grid/L2/Power',
 			_p_grid3 = '/Ac/Grid/L3/Power',
 			s_battery = '/Dc/Battery/BatteryService',
-		),
-	}
-	VARS_RO = {
-		'com.victronenergy.system': dict(
 			n_phase = '/Ac/ActiveIn/NumberOfPhases',
 		),
 	}
@@ -247,13 +243,14 @@ class InvControl(BusVars):
 			self.p_crit_ = []
 			self.p_cur_ = []
 
-			for i in range(self.n_phase):
+			n_phase = self.n_phase.value or 0
+			for i in range(n_phase):
 				i += 1
 				self.p_grid_.append(await self.intf.importer('com.victronenergy.system', f'/Ac/Grid/L{i}/Power'))
 				self.p_cons_.append(await self.intf.importer('com.victronenergy.system', f'/Ac/Consumption/L{i}/Power'))
 				self.p_crit_.append(await self.intf.importer('com.victronenergy.system', f'/Ac/ConsumptionOnOutput/L{i}/Power'))
 				self.p_cur_.append(await self.intf.importer('com.victronenergy.system', f'/Ac/ActiveIn/L{i}/Power'))
-			self.load = [0] * self.n_phase
+			self.load = [0] * n_phase
 
 			await self.update_vars()
 			yield self
@@ -345,7 +342,8 @@ class InvControl(BusVars):
 		self.b_cap = (await self.intf.importer(self.s_battery.value, '/Capacity', createsignal=False)).value
 		self.p_set_ = []
 		self.p_run_ = []
-		for i in range(self.n_phase):
+		n_phase = self.n_phase.value or 0
+		for i in range(n_phase):
 			i += 1
 			self.p_set_.append(await self.intf.importer(self.acc_vebus.value, f'/Hub4/L{i}/AcPowerSetpoint'))
 			self.p_run_.append(await self.intf.importer(self.acc_vebus.value, f'/Ac/ActiveIn/L{i}/P'))
@@ -657,6 +655,11 @@ class InvControl(BusVars):
 		"""
 		Calculate inverter/charger power
 		"""
+		n_phase = self.n_phase.value or 0
+		if not n_phase:
+			# no input
+			return []
+
 		lims = []
 		no_lims = []
 		p_info = dict(
@@ -893,18 +896,19 @@ class InvControl(BusVars):
 
 		p_info["setpoint"] = np
 
-		if phase is None and self.n_phase > 1:
+		if phase is None and n_phase > 1:
 			ps = self.to_phases(np)
 		else:
-			ps = [0] * self.n_phase
+			ps = [0] * n_phase
 			ps[phase-1 if phase else 0] = np
 		p_info["inv_phases"] = ps
+
+		# The return value is the inverter output, which needs
+		# to be adjusted for loads connected to it
+		p_info["phases"] = phases = [ a-b.value for a,b in zip(ps, self.p_crit_) ]
+
 		self.set_state("inverter", p_info)
-
-                # The return value is the inverter output, which needs
-                # to be adjusted for loads connected to it
-
-		return [ a-b.value for a,b in zip(ps, self.p_crit_) ]
+		return phases
 
 	def small_p_step(self, p, q):
 		if abs(p-q) < self.p_step:
@@ -925,24 +929,32 @@ class InvControl(BusVars):
 		are not exceeded.
 		"""
 
-		self.load = [ -b.value for b in self.p_cons_ ]
-		load_avg = sum(self.load)/self.n_phase
+		n_phase = self.n_phase.value or 0
+		if not n_phase:
+			return []
 
-		ps = [ p/self.n_phase - (g-load_avg) for g in self.load ]
+		self.load = [ -b.value for b in self.p_cons_ ]
+		load_avg = sum(self.load)/n_phase
+
+		ps = [ p/n_phase - (g-load_avg) for g in self.load ]
 		ps = balance(ps, min=-self.p_per_phase, max=self.p_per_phase)
 		return ps
 
 
 	async def set_inv_ps(self, ps):
 		# OK, we're safe, implement
+		n_phase = self.n_phase.value or 0
+		if not n_phase:
+			return
+
 		if self.op.get("fake", False):
-			if self.n_phase > 1:
+			if n_phase > 1:
 				logger.error("NO-OP SET inverter %.0f ∑ %s", -sum(ps), " ".join(f"{-x :.0f}" for x in ps))
 			else:
 				logger.error("NO-OP SET inverter %.0f", -ps[0])
 			return
 
-		if self.n_phase > 1:
+		if n_phase > 1:
 			logger.info("SET inverter %.0f ∑ %s", -sum(ps), " ".join(f"{-x :.0f}" for x in ps))
 		else:
 			logger.info("SET inverter %.0f", -ps[0])
@@ -971,8 +983,8 @@ class InvModeBase:
 	def __init__(self, intf):
 		self.intf = intf
 		self.ps = None
-		self.ps_min = [-999999999] * intf.n_phase
-		self.ps_max = [999999999] * intf.n_phase
+		self.ps_min = None
+		self.ps_max = None
 		self.running = False
 
 	# p_set_
@@ -985,6 +997,15 @@ class InvModeBase:
 	#   The power other consumers are taking from the bus. Negative.
 	async def set_inv_ps(self, ps):
 		intf = self.intf
+		n_phase = intf.n_phase.value or 0
+		if not n_phase:
+			self.ps_min = None
+			self.ps_max = None
+			return
+
+		if self.ps_min is None:
+			self.ps_min = [-999999999] * n_phase
+			self.ps_max = [999999999] * n_phase
 
 		# This convoluted step thinks about inverter output limits.
 		# Specifically, if one of them is overloaded and another is not
@@ -993,13 +1014,13 @@ class InvModeBase:
 		# Yes this may result in one grid phase going in while others
 		# go out, but that could already happen anyway and should not
 		# materially increase grid load differences across phases.
-		if self.running and intf.n_phase > 1:
+		if self.running and n_phase > 1:
 			pd_min = pd_max = 0
 			d_min = d_max = 0
 			ops = ps
 
 			# First pass: determine the invertes' current operational limits.
-			for i in range(intf.n_phase):
+			for i in range(n_phase):
 				p = ps[i]
 				p_set = intf.p_set_[i].value
 				p_cur = intf.p_cur_[i].value
