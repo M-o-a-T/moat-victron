@@ -57,6 +57,13 @@ class InvMode_Remote(InvModeBase):
 		return p
 
 	@property
+	def p_limit(self):
+		p = self.intf.op.get("p_limit", 1)
+		p = max(0,p)
+		self.intf.op["p_limit"] = p
+		return p
+
+	@property
 	def mode(self):
 		return self.intf.op.get("mode", 3)
 
@@ -106,6 +113,7 @@ class InvMode_Remote(InvModeBase):
 		power_ref="Reference power, reported to energy marketing provider",
 		power_override="Inverter power. Set to -1 to disable.",
 		limit="Limit factor. Must be [0…1].",
+		p_limit="Absolute grid power limit. Must be >0.",
 		low_grid="Do grid zero?",
 		soc_low_zero="SoC lower? stop the inverter",
 		soc_low="SoC lower? start grid-only mode",
@@ -130,8 +138,10 @@ Normal operation is resumed when SoC is higher than @soc_low_ok.
 SoC values must be between 0 and 1, though values outside the 0.10 … 0.95 range are
 unlikely to work the way you want them to.
 
-External power is constrained by the "limit" value, which must be between 0 and 1.
+Grid power is constrained by the "limit" value, which must be between 0 and 1.
 If DistKV is active, this value is the minimum of the available "limit" sub-entries.
+
+Same for "p_limit": absolute power values >= 0, "power_limit" sub-entries.
 
 If @power_override is set, its value controls the inverter power directly.
 This is intended to shut down the system at night / in low-battery situations.
@@ -151,10 +161,13 @@ should not be positive. Set to -1 to delete.
 		try:
 			async with anyio.create_task_group() as tg:
 				evt_l = anyio.Event()
+				evt_pl = anyio.Event()
 				evt_p = anyio.Event()
 				tg.start_soon(self._dkv_mon_l, evt_l)
+				tg.start_soon(self._dkv_mon_pl, evt_pl)
 				tg.start_soon(self._dkv_mon_p, evt_p)
 				await evt_l.wait()
+				await evt_pl.wait()
 				await evt_p.wait()
 				tg.start_soon(self._run)
 
@@ -168,6 +181,7 @@ should not be positive. Set to -1 to delete.
 
 	async def _dkv_mon_l(self, evt):
 		lims = self._limits
+		p_lims = self._p_limits
 		intf = self.intf
 		dkv = await intf.distkv
 		if dkv is None:
@@ -180,6 +194,7 @@ should not be positive. Set to -1 to delete.
 						evt.set()
 						# got them all
 						self._limit = min(lims.values(), default=1)
+						self._p_limit = min(p_lims.values(), default=None)
 				else:
 					lim = msg.get("value", None)
 					p = msg.path[-1]
@@ -191,6 +206,35 @@ should not be positive. Set to -1 to delete.
 					if self._limit is not None:
 						self._limit = min(lims.values(), default=1)
 						logger.info("LIM: %f", self._limit)
+					if self._p_limit is not None:
+						self._p_limit = min(p_lims.values(), default=1)
+						logger.info("LIM: %f", self._p_limit)
+
+	async def _dkv_mon_pl(self, evt):
+		lims = self._p_limits
+		intf = self.intf
+		dkv = await intf.distkv
+		if dkv is None:
+			evt.set()
+			return
+		async with dkv.watch(intf.distkv_prefix / "solar" / "power_limit", fetch=True) as mon:
+			async for msg in mon:
+				if "state" in msg:
+					if msg.state == "uptodate":
+						evt.set()
+						# got them all
+						self._p_limit = min(lims.values(), default=None)
+				else:
+					lim = msg.get("value", None)
+					p = msg.path[-1]
+					logger.info("P_LIM %s: %f", p, lim)
+					if lim is None:
+						lims.pop(p, None)
+					else:
+						lims[p] = lim
+					if self._p_limit is not None:
+						self._p_limit = min(lims.values(), default=1)
+						logger.info("P_LIM: %f", self._p_limit)
 
 	async def _dkv_mon_p(self, evt):
 		pows = self._powers
@@ -226,11 +270,15 @@ should not be positive. Set to -1 to delete.
 		while True:
 			if dkv is None:
 				state.limits["manual"] = self._limit = self.limit
+				state.p_limits["manual"] = self._p_limit = self.p_limit
 				state.powers["manual"] = self._power = self.power
 			else:
 				if "limit" in self.intf.op:
 					logger.warning("DistKV is active: manual limit is ignored!")
 					del self.intf.op["limit"]
+				if "p_limit" in self.intf.op:
+					logger.warning("DistKV is active: manual power limit is ignored!")
+					del self.intf.op["p_limit"]
 				if "power" in self.intf.op:
 					logger.warning("DistKV is active: power setting is ignored!")
 					del self.intf.op["power"]
@@ -277,6 +325,13 @@ should not be positive. Set to -1 to delete.
 				if self._limit is not None:
 					p *= self._limit
 					exc *= self._limit
+				if self._p_limit is not None:
+					if p > self._p_limit:
+						p = self._p_limit
+						exc = 0
+					else:
+						exc = self._p_limit - p
+
 				state.p_real = p
 				state.exc = exc
 				try:
