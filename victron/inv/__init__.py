@@ -440,9 +440,6 @@ class InvControl(BusVars):
 				raise DBusError("org.m_o_a_t.inv.unknown", "unknown mode")
 			self._mode = mode
 			# TODO verify the new mode's parameters
-			if self._mode_task is not None:
-				self._mode_task.cancel()
-				await self._mode_task_stopped.wait()
 			self._change_mode_evt.set()
 
 		# TODO verify parameters for current mode
@@ -473,6 +470,10 @@ class InvControl(BusVars):
 			self._mode_task_stopped.set()
 
 	async def _start_mode_task(self):
+		if self._mode_task is not None:
+			self._mode_task.cancel()
+			await self._mode_task_stopped.wait()
+			self._mode_task_stopped = anyio.Event()
 		self._tg.start_soon(self._run_mode_task)
 
 	async def _solar_log(self):
