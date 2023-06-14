@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+
+import sys
+import os
+import anyio
+
+from victron.dbus.monitor import DbusMonitor
+
+import logging
+logger = logging.getLogger(__name__)
+
+# ====== ALL CODE BELOW THIS LINE IS PURELY FOR DEVELOPING THIS CLASS ======
+
+# Example function that can be used as a starting point to use this code
+async def value_changed_on_dbus(dbusServiceName, dbusPath, dict, changes, deviceInstance):
+	logger.debug("0 ----------------")
+	logger.debug("1 %s%s changed", dbusServiceName, dbusPath)
+	# logger.debug("2 vrm dict	 : %s", dict)
+	logger.debug("3 changes-text: %s", changes['Text'])
+	logger.debug("4 changes-value: %s", changes['Value'])
+	logger.debug("5 deviceInstance: %s", deviceInstance)
+	logger.debug("6 - end")
+
+
+def nameownerchange(a, b):
+	# used to find memory leaks in DbusMonitor and DbusItemImport
+	logger.debug("A ----------------")
+	import gc
+	gc.collect()
+	objects = gc.get_objects()
+	logger.debug("A %d", len([o for o in objects if type(o).__name__ == 'VeDbusItemImport']))
+	logger.debug("B %d", len([o for o in objects if type(o).__name__ == 'SignalMatch']))
+	logger.debug("C %d", len(objects))
+
+
+# We have a mainloop, but that is just for developing this code. Normally above class & code is used from
+# some other class, such as vrmLogger or the pubsub Implementation.
+async def main():
+	# Init logging
+	logging.basicConfig(level=logging.DEBUG)
+	logger.info(__file__ + " is starting up")
+
+	# Have a mainloop, so we can send/receive asynchronous calls to and from dbus
+
+	import os
+	import sys
+	sys.path.insert(1, os.path.join(os.path.dirname(__file__), '../../'))
+
+	dummy = {'code': None, 'whenToLog': 'configChange', 'accessLevel': None}
+	monitorlist = {'com.victronenergy.solarcharger': {
+				'/Connected': dummy,
+				'/ProductName': dummy,
+				'/Mgmt/Connection': dummy,
+				'/Dc/0/Voltage': dummy,
+				'/Dc/0/Current': dummy,
+				'/Dc/0/Temperature': dummy,
+				'/Load/I': dummy,
+				'/FirmwareVersion': dummy,
+				'/DbusInvalid': dummy,
+				'/NonExistingButMonitored': dummy}}
+
+	async with DbusMonitor(None, monitorlist, value_changed_on_dbus,
+			deviceAddedCallback=nameownerchange, deviceRemovedCallback=nameownerchange) as d:
+
+		# logger.info("==configchange values==")
+		# logger.info(pprint.pformat(d.get_values(['configChange'])))
+
+		# logger.info("==onIntervalAlways and onIntervalOnlyWhenChanged==")
+		# logger.info(pprint.pformat(d.get_values(['onIntervalAlways', 'onIntervalAlwaysAndOnEvent'])))
+
+		await anyio.sleep(1)
+
+		# Some simple tests
+		assert 1000 == d.get_value('wrongservice', '/DbusInvalid', default_value=1000)
+		assert 1000 == d.get_value('com.victronenergy.dummyservice.ttyO1', '/NotInTheMonitorList', default_value=1000)
+		assert 1000 == d.get_value('com.victronenergy.dummyservice.ttyO1', '/DbusInvalid', default_value=1000)
+		assert 1000 == d.get_value('com.victronenergy.dummyservice.ttyO1', '/NonExistingButMonitored', default_value=1000)
+
+		# Start and run the mainloop
+		logger.info("Responding on events")
+		while True:
+			await anyio.sleep(5)
+			for k,v in d.get_service_list('com.victronenergy.solarcharger').items():
+				print(k,v)
+
+if __name__ == "__main__":
+	anyio.run(main, backend="trio")
