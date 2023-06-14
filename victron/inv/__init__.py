@@ -863,6 +863,8 @@ class InvControl(BusVars):
 			np = p
 			self.step = 1
 		else:
+			lim = dict(rule="P_GRAD")
+
 			if self.small_p_step(self.dest_p, p):
 				# the goal is roughly the same as last time
 				self.step += 1
@@ -883,6 +885,8 @@ class InvControl(BusVars):
 			np = self.last_p + pd
 			lim["step"] = (pd,self.last_p,p,np)
 			logger.debug("P_GRAD: %.0f > %.0f = %.0f", self.last_p,p,np)
+
+			lims.append(lim)
 
 		p_info["dest"] = self.dest_p = p
 		self.last_p = np
