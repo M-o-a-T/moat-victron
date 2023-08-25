@@ -183,7 +183,6 @@ should not be positive. Set to -1 to delete.
 
 	async def _dkv_mon_l(self, evt):
 		lims = self._limits
-		p_lims = self._p_limits
 		intf = self.intf
 		dkv = await intf.distkv
 		if dkv is None:
@@ -193,10 +192,9 @@ should not be positive. Set to -1 to delete.
 			async for msg in mon:
 				if "state" in msg:
 					if msg.state == "uptodate":
+						self._limit = min(lims.values(), default=1)
 						evt.set()
 						# got them all
-						self._limit = min(lims.values(), default=1)
-						self._p_limit = min(p_lims.values(), default=None)
 				else:
 					lim = msg.get("value", None)
 					p = msg.path[-1]
@@ -208,9 +206,6 @@ should not be positive. Set to -1 to delete.
 					if self._limit is not None:
 						self._limit = min(lims.values(), default=1)
 						logger.info("LIM: %f", self._limit)
-					if self._p_limit is not None:
-						self._p_limit = min(p_lims.values(), default=1)
-						logger.info("LIM: %f", self._p_limit)
 
 	async def _dkv_mon_pl(self, evt):
 		lims = self._p_limits
@@ -223,9 +218,9 @@ should not be positive. Set to -1 to delete.
 			async for msg in mon:
 				if "state" in msg:
 					if msg.state == "uptodate":
+						self._p_limit = min(lims.values(), default=None)
 						evt.set()
 						# got them all
-						self._p_limit = min(lims.values(), default=None)
 				else:
 					lim = msg.get("value", None)
 					p = msg.path[-1]
@@ -249,9 +244,9 @@ should not be positive. Set to -1 to delete.
 			async for msg in mon:
 				if "state" in msg:
 					if msg.state == "uptodate":
+						self._power = min(pows.values(), default=0)
 						evt.set()
 						# got them all
-						self._power = min(pows.values(), default=0)
 				else:
 					val = msg.get("value", None)
 					p = msg.path[-1]
