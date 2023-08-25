@@ -151,9 +151,11 @@ should not be positive. Set to -1 to delete.
 	)
 
 	_limit = None
+	_p_limit = None
 
 	async def run(self):
 		self._limits = {}
+		self._p_limits = {}
 		self._powers = {}
 		intf = self.intf
 
@@ -264,7 +266,7 @@ should not be positive. Set to -1 to delete.
 	async def _run(self):
 		intf = self.intf
 		dkv = await intf.distkv
-		state = attrdict(mode=0, limits=self._limits, powers=self._powers)
+		state = attrdict(mode=0, limits=self._limits, p_limits=self._p_limits, powers=self._powers)
 		intf.set_state("remote", state)
 
 		while True:
