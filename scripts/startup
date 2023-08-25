@@ -1,0 +1,15 @@
+# #!/bin/bash
+# MoaT start-up
+#
+(sleep 5
+ cd bus/python
+ ./scripts/mpy-moat -c /data/moat/serial/moat.ttyACM0.cfg cmd batt.rly -e st True
+) &
+screen -c scripts/screenrc -d -m
+screen -X zombie qr
+
+screen -X screen -t w scripts/watcher
+screen -X screen -t s scripts/sum_solar
+screen -X screen -t inv sh -c "while sleep 1 ; do scripts/inv_control -c configs/inv.cfg -d -m remote ; done"
+screen -X screen -t sh /bin/bash -i
+#screen -r moat scripts/mpy-moat -v -c /data/moat/serial/moat.ttyACM0.cfg -p /dev/ttyACM0 mplex
