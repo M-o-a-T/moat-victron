@@ -13,6 +13,8 @@ sed -e "s#:DIR:#$d#" < profile.sh > $HOME/.profile
 
 . env/bin/activate
 
+cp scripts/initscript /data
+
 cp -r serial/dbus-modbus-local.svc/. /opt/victronenergy/service-templates/dbus-modbus-local.serial
 sed -i -e "s!DIR!$d!" /opt/victronenergy/service-templates/dbus-modbus-local.serial/run
 

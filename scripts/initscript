@@ -3,6 +3,7 @@ export HOME=/data/moat
 cd $HOME
 . env_v/bin/activate
 
-screen -d -m -c ./screenrc
+scripts/startup
+
 sleep 10
-dbus -y org.m_o_a_t.inv.main /Control SetModeParam power_override %0
+dbus -y org.m_o_a_t.inv.main /Control SetModeParam power_override %-1
